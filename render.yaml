@@ -1,0 +1,13 @@
+# Render deployment config for The Long Street.
+# Render runs a persistent Node process, which the WebSocket lobby in
+# server.js requires. Render injects PORT; server.js already reads it.
+services:
+  - type: web
+    name: the-long-street
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
