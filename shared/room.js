@@ -42,7 +42,9 @@ export class Room {
     this.seed = o.seed; this.send = o.send;
     this.players = new Map(); this.host = null;
     this.phase = 'lobby'; this.night = 0; this.time = 0;
-    this.R = rng32((o.seed ^ 0x51ed27) + ((Math.random() * 1e9) | 0));
+    // Live lobbies jitter the seed so two rooms on the same daily seed do not
+    // play out identically. Tests pass an explicit jitter to get a reproducible run.
+    this.R = rng32((o.seed ^ 0x51ed27) + (o.jitter ?? ((Math.random() * 1e9) | 0)));
     this.W = null;
   }
 

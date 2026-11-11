@@ -17,7 +17,7 @@ for (const seed of [1, 20261111, 987654]) {
 function run(seed, nBots, mode) {
   const log = { dead: 0, smash: 0, nights: 0, over: null, states: new Set(), reveal: 0 };
   const room = new Room({
-    id: 'x', seed, max: 8, send: (pid, m) => {
+    id: 'x', seed, max: 8, jitter: 0, send: (pid, m) => {
       if (m.t === 'dead') log.dead++;
       if (m.t === 'smash') log.smash++;
       if (m.t === 'nightEnd') log.nights++;
@@ -41,11 +41,11 @@ function run(seed, nBots, mode) {
           room.handle(p.id, { t: 'st', x: p.x + (dx / d) * 0.25, y: 0, z: Math.max(-6, Math.min(6, p.z + (dz / d) * 0.25)), ry: 0, fl: 2 | 8 });
           if (step % 10 === 0) room.handle(p.id, { t: 'noise', r: 16 });
         }
-      } else if (mode === 'cheat') {      // teleport to stars, hide in stairwells in between
-        if (step % 40 === 0) {
-          const star = [...room.pickups.values()].find((k) => k.k === 'star');
-          if (star) { room.handle(p.id, { t: 'st', x: star.x, y: star.y - 0.7, z: star.z, ry: 0, fl: 0 }); room.handle(p.id, { t: 'pick', id: star.id }); }
-        }
+      } else if (mode === 'cheat') {      // teleport straight onto stars and hoover them up
+        // Collect every tick. At one star per 2s the monster reliably killed the
+        // bots first, so the night ended by wipe and the quota path never ran.
+        const star = [...room.pickups.values()].find((k) => k.k === 'star');
+        if (star) { room.handle(p.id, { t: 'st', x: star.x, y: star.y - 0.7, z: star.z, ry: 0, fl: 0 }); room.handle(p.id, { t: 'pick', id: star.id }); }
       } else {                             // camp in a ground-floor flat
         if (mode === 'stairs') room.handle(p.id, { t: 'st', x: p.x, y: 3.2 * 3, z: p.z, ry: 0, fl: 0 });
         else room.handle(p.id, { t: 'st', x: 30 + 6, y: 0.1, z: K.FRONT + 3, ry: 0, fl: 0 });
