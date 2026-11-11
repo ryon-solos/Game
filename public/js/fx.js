@@ -30,7 +30,7 @@ const Grade = {
       // vignette, pulsing with fear
       float v = smoothstep(0.85, 0.15, sqrt(r2) * (1.25 + fear * 0.35 * (0.8 + 0.2 * sin(time * 6.0))));
       col *= mix(0.3, 1.0, v);
-      col += vec3(0.55, 0.0, 0.0) * hurt * (1.0 - v + 0.25);
+      col += vec3(0.42, 0.0, 0.0) * hurt * hurt * (1.0 - v + 0.06);
       col = mix(col, col * vec3(1.0, 0.25, 0.2), dead * 0.6);
       // film grain
       float g = hash(vUv * vec2(aspect, 1.0) * 900.0 + fract(time) * 100.0) - 0.5;

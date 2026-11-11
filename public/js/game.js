@@ -271,7 +271,7 @@ export class Game {
 
   // ------------------------------------------------------------------ frame
   frame(now) {
-    const dt = Math.min(0.05, (now - this.last) / 1000); this.last = now; this.time += dt;
+    const dt = Math.max(0, Math.min(0.05, (now - this.last) / 1000)); this.last = now; this.time += dt;
     const cam = this.camera, set = this.set, snd = this.sound;
     const playing = this.world && (this.phase === 'night' || this.phase === 'dawn');
     if (this.world) {
@@ -334,7 +334,7 @@ export class Game {
     }
     this.recoil = Math.max(0, this.recoil - dt * 6); this.shootCd -= dt;
     this.flash.intensity = Math.max(0, this.flash.intensity - dt * 600);
-    this.torch.intensity += ((this.torchOn && this.alive ? 24 : 0) - this.torch.intensity) * Math.min(1, dt * 20);
+    this.torch.intensity += ((this.torchOn && this.alive ? 18 : 0) - this.torch.intensity) * Math.min(1, dt * 20);
     if (this.viewGun) {
       this.viewGun.visible = this.alive && this.ammo > 0;
       this.viewGun.position.set(0.2, -0.2 + this.recoil * 0.03, -0.42 + this.recoil * 0.08); this.viewGun.rotation.x = this.recoil * 0.4;
@@ -394,6 +394,7 @@ export class Game {
       let best = 2.4;
       const fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw);
       for (const o of this.world.doors) {
+        if (o.gone) continue;
         const d = o.d, dx = d.cx - P.x, dz = d.cz - P.z;
         if (Math.abs(dx) > 2.4 || Math.abs(dz) > 2.4 || Math.abs(d.y - P.y) > 1.2) continue;
         const dist = Math.hypot(dx, dz);

@@ -164,7 +164,7 @@ export class WorldView {
   setDoor(id, open, instant) {
     const o = this.doors[id];
     if (!o) return;
-    o.open = open; o.col.on = !open;
+    o.open = open; o.col.on = !open && !o.gone;
     if (instant) { o.t = open ? 1 : 0; o.pivot.rotation.y = open ? o.a1 : o.a0; }
   }
 
@@ -182,6 +182,7 @@ export class WorldView {
       }
     }
     for (const m of touched) m.instanceMatrix.needsUpdate = true;
+    for (const o of this.doors) if (o.d.flat === flatId && o.d.kind === 'balcony') { o.gone = !restore; o.pivot.visible = !!restore; o.col.on = restore ? !o.open : false; }
     for (const s of this.srcs) if (s.flat === flatId && s.kind !== 'sigil') { s.on = !!restore; if (s.mesh) s.mesh.visible = !!restore; }
     return list.filter((e) => e.col).map((e) => e.b);
   }
