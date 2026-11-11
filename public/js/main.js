@@ -41,7 +41,7 @@ function fullscreen(on) {
 const playerName = () => (profile.name || '').trim() || 'Survivor';
 
 // ------------------------------------------------------------------ HUD
-const FLAVOUR = ['It is listening.', 'It has learned the sound of doors.', 'It reaches a little deeper tonight.', 'It remembers where you hid.',
+const FLAVOUR = ['It is listening.', 'It has learned the sound of doors.', 'It is not alone any more.', 'It remembers where you hid.',
   'It has learned to open doors.', 'It pretends to leave.', 'It is taller than the rooftops soon.', 'Almost every hand is awake.', 'It does not forget any more.', 'The last night. All eight hands.'];
 let bannerT;
 function banner(title, sub, hold) {
@@ -80,8 +80,9 @@ const hud = {
     const line = !mine ? '' : !mine.alive ? 'You were taken. You wake again at dusk.' : mine.safe ? 'You rested indoors. +40 health.' : 'Dawn found you outside. No rest for you.';
     banner(`NIGHT ${m.n} SURVIVED`, line + '\nThe next night begins shortly…', true);
   },
+  grabbed() { $('specNote').textContent = ''; hud.alert('IT HAS YOU'); },
   dead(cause) {
-    $('specNote').textContent = cause === 'hand' ? 'A HAND FOUND YOU' : cause === 'debris' ? 'CRUSHED BY RUBBLE' : 'THE FALL KILLED YOU';
+    $('specNote').textContent = cause === 'hand' ? 'EATEN' : cause === 'debris' ? 'CRUSHED BY RUBBLE' : cause === 'minion' ? 'THE CRAWLERS GOT YOU' : 'THE FALL KILLED YOU';
   },
   over(m) {
     overlay('pause', false); $('banner').classList.remove('show');
@@ -100,10 +101,11 @@ const hud = {
     $('hHp').style.width = s.hp + '%'; $('hHpN').textContent = Math.round(s.hp);
     $('hSt').style.width = s.stamina + '%'; $('hSt').parentElement.classList.toggle('tired', !!s.tired);
     $('hAmmo').textContent = (s.ammo > 0 ? `FLARE PISTOL  ${'▮'.repeat(s.ammo)}` : '') + (s.torch ? '   TORCH ON' : '');
-    const z = $('hZone'); z.textContent = s.alive ? s.zone + (s.crouch ? '  ·  crouched' : '') : '—'; z.classList.toggle('out', s.alive && !s.indoors);
+    const z = $('hZone'); z.textContent = s.alive ? s.zone + (s.hidden ? '  ·  HIDDEN IN CLOSET' : s.crouch ? '  ·  crouched' : '') : '—'; z.classList.toggle('out', s.alive && !s.indoors && !s.hidden);
+    $('hMin').textContent = s.minions ? `CRAWLERS LOOSE: ${s.minions}` : '';
     const e = $('hExpo'); e.style.width = Math.round(s.expo * 100) + '%'; e.classList.toggle('hot', s.expo > 0.75);
     $('hNoise').style.width = Math.round(s.noise * 100) + '%';
-    $('prompt').innerHTML = s.prompt ? `<b>E</b>${s.prompt}` : '';
+    $('prompt').innerHTML = s.prompt ? `<b>E</b>${s.prompt}` + (s.progress != null ? `<div class="bar"><i style="width:${Math.round(s.progress * 100)}%"></i></div>` : '') : '';
     $('cross').style.display = s.alive ? '' : 'none';
     $('hOthers').innerHTML = s.others.map((o) => `<li class="${o.alive ? '' : 'dead'}">${esc(o.name)}<span>${o.alive ? o.hp : 'taken'}</span></li>`).join('');
     if (!s.alive && s.playing) {

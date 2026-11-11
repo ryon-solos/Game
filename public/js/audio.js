@@ -169,6 +169,15 @@ export class Sound {
       case 'stun': O(1.4, 'sawtooth', 300, 40, 0.3); N(1.2, 'bandpass', 2500, 300, 2, 0.6); break;
       case 'dawn': [392, 523.3, 659.3, 784].forEach((f, i) => O(3, 'sine', f, 0, 0.12, i * 0.35)); break;
       case 'ui': O(0.05, 'sine', 620, 480, 0.12); break;
+      case 'closet': O(0.3, 'sawtooth', 150 + Math.random() * 60, 240, 0.05); N(0.25, 'bandpass', 700, 1200, 8, 0.2); O(0.08, 'sine', 140, 70, 0.3, 0.26); break;
+      case 'channel': [660, 990, 1320].forEach((f, i) => O(1.0, 'sine', f, f * 1.5, 0.05, i * 0.12)); N(1.0, 'bandpass', 2000, 6000, 6, 0.08); break;
+      case 'starcry': [1760, 2217, 2637].forEach((f, i) => O(1.6, 'sine', f, f * 0.98, 0.08, i * 0.05)); break;
+      case 'skitter': N(0.035, 'highpass', 2500 + Math.random() * 2500, 0, 2, 0.35); O(0.03, 'square', 900 + Math.random() * 600, 300, 0.05); break;
+      case 'screech': O(0.9, 'sawtooth', 1400, 2600, 0.16); O(0.9, 'square', 1470, 2450, 0.08); N(0.9, 'bandpass', 3000, 5200, 5, 0.5); break;
+      case 'bite': N(0.12, 'bandpass', 1800, 500, 3, 0.9); O(0.15, 'sawtooth', 220, 70, 0.4); N(0.1, 'lowpass', 600, 150, 1, 0.6, 0.1); break;
+      case 'mdie': O(1.2, 'sawtooth', 900, 60, 0.14); N(1.2, 'bandpass', 2600, 200, 3, 0.4); break;
+      case 'summon': for (const f of [55, 82, 110]) O(3.2, 'sawtooth', f, f * 1.5, 0.22); N(3.2, 'bandpass', 300, 1800, 2, 0.6); for (let i = 0; i < 9; i++) N(0.05, 'highpass', 3000, 0, 2, 0.4, 1.2 + i * 0.2); break;
+      case 'eat': for (let i = 0; i < 6; i++) { N(0.11, 'lowpass', 1400, 200, 2, 1.1, i * 0.21); O(0.09, 'square', 90 + Math.random() * 50, 40, 0.5, i * 0.21); } O(1.6, 'sawtooth', 70, 40, 0.3); N(0.5, 'bandpass', 500, 300, 2, 0.6, 1.3); break;
       case 'torch': O(0.02, 'square', 2200, 1200, 0.08); break;
     }
   }

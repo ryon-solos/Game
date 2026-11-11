@@ -5,10 +5,12 @@ import { makeTextures, makeMaterials } from './textures.js';
 import { WorldView } from './worldview.js';
 import { Player } from './player.js';
 import { MonsterView } from './monster.js';
+import { MinionView } from './minion.js';
 import { Avatar } from './avatar.js';
 import { Post, Debris } from './fx.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const _v = new THREE.Vector3();
 const QUALITY = {
   low: { pr: 0.7, shadow: 0, torchShadow: false },
   medium: { pr: 1, shadow: 2048, torchShadow: false },
@@ -48,7 +50,7 @@ export class Game {
     this.flash = new THREE.PointLight(0xffc080, 0, 14); this.flash.position.set(0.2, -0.1, -0.8); cam.add(this.flash);
 
     this.T = makeTextures(r.capabilities.getMaxAnisotropy() > 4 ? 4 : 1);
-    this.M = makeMaterials(this.T);
+    this.M = makeMaterials(this.T, settings.quality !== 'low');
     this.post = new Post(r, scene, cam, settings.quality);
 
     // drifting ash
@@ -59,7 +61,8 @@ export class Game {
     this.ash.frustumCulled = false; scene.add(this.ash);
 
     this.world = null; this.W = null; this.seed = null;
-    this.monster = new MonsterView(scene); this.monster.setVisible(false);
+    this.monster = new MonsterView(scene, this.T); this.monster.setVisible(false);
+    this.minions = new Map(); this.skitT = 0; this.taking = null; this.eaten = null; this.hidden = false;
     this.monster.onStep = (x, z) => this.monsterStep(x, z);
     this.avatars = new Map();
     this.me = null; this.player = null;
@@ -120,9 +123,20 @@ export class Game {
       case 'pick': {
         const p = this.world && this.world.removePickup(m.id);
         if (p) this.sound.play(m.k === 'star' ? 'star' : 'pick', m.by === this.me ? 0.9 : 0.7, m.by === this.me ? null : { x: p.k.x, y: p.k.y, z: p.k.z, max: 30 });
-        if (m.by === this.me) this.hud.toast(m.k === 'star' ? 'Star collected' : m.k === 'gun' ? 'Flare pistol: +2 rounds (left click)' : 'Bandages: +35 health', m.k);
+        if (m.by === this.me) this.hud.toast(m.k === 'star' ? 'Star taken. It heard that. Move.' : m.k === 'gun' ? 'Flare pistol: +2 rounds (left click)' : 'Bandages: +35 health', m.k);
+        if (this.taking && this.taking.id === m.id) this.taking = null;
         return;
       }
+      case 'closet': {
+        const c = this.W.closets[m.id]; this.world.setCloset(m.id, m.open);
+        return this.sound.play('closet', 0.8, { x: c.cx, y: c.y + 1, z: c.cz, max: 20 });
+      }
+      case 'eaten': return this.onEaten(m);
+      case 'summon':
+        this.sound.play('summon', 1); this.shake = Math.max(this.shake, 0.3);
+        this.hud.alert(m.n > 1 ? 'IT HAS CALLED THEM IN' : 'IT HAS CALLED SOMETHING IN');
+        this.hud.toast('Crawlers are loose in the buildings for a minute. Closets will not always save you.', 'bad');
+        return;
       case 'door': {
         const d = this.W.doors[m.id]; d.open = m.open; this.world.setDoor(m.id, m.open);
         return this.sound.play('door', 0.8, { x: d.cx, y: d.y + 1, z: d.cz, max: 22 });
@@ -132,13 +146,16 @@ export class Game {
       case 'hp':
         this.hp = m.hp; this.hurtFx = 1; this.shake = Math.max(this.shake, 0.5); this.sound.play('hurt', 1);
         if (m.cause === 'debris') this.hud.toast('Hit by falling debris', 'bad');
+        if (m.cause === 'minion') this.hud.toast('Bitten. Its shriek carries to the street.', 'bad');
         return;
       case 'alert':
         this.sound.play('alert', 1); this.hud.alert('IT KNOWS WHERE YOU ARE');
         return;
       case 'fx': {
-        const max = { roar: 140, spot: 110, windup: 80, scratch: 26, reach: 30, doorslam: 30 }[m.k] || 40;
+        const max = { roar: 140, spot: 110, windup: 80, scratch: 26, reach: 30, doorslam: 30, screech: 45, bite: 25, mdie: 30, summon: 160, starcry: 60 }[m.k] || 40;
         this.sound.play(m.k, 1, { x: m.x, y: m.y, z: m.z, max });
+        if (m.k === 'mdie' && this.debris) this.debris.puff(m.x, m.y, m.z, 1.6, 5, 1, 0x1a2a1c);
+        if (m.k === 'bite' && this.debris) this.debris.puff(m.x, m.y + 0.4, m.z, 0.7, 3, 0.5, 0x6a0808);
         if (m.k === 'roar' || m.k === 'spot') this.shake = Math.max(this.shake, 0.25);
         return;
       }
@@ -165,6 +182,7 @@ export class Game {
     this.W = genWorld(seed);
     this.world = new WorldView(this.scene, this.W, this.M, this.T, this.set.quality);
     this.debris = new Debris(this.scene, this.M.brick, this.T.soft, this.world.col);
+    this.gone = new Set();
     this.player = new Player(this.world.col);
     this.viewGun = this.world.makeGun(); this.viewGun.position.set(0.2, -0.2, -0.42); this.viewGun.visible = false; this.camera.add(this.viewGun);
   }
@@ -174,7 +192,10 @@ export class Game {
     const W = this.W, w = this.world;
     this.night = m.n; this.quota = m.quota; this.phase = 'night'; this.snap = null; this.stars = 0; this.tl = m.duration;
     m.doors.forEach((o, i) => { W.doors[i].open = !!o; w.setDoor(i, !!o, true); });
-    for (const id of m.destroyed) if (!W.flats[id].destroyed) w.smash(id);
+    for (const g of m.destroyed) if (!(this.gone ||= new Set()).has(g)) { this.gone.add(g); w.smash(g); }
+    W.closets.forEach((c, i) => w.setCloset(i, false, true));
+    for (const v of this.minions.values()) v.dispose();
+    this.minions.clear(); this.taking = null; this.eaten = null;
     w.setPickups(m.pickups);
     // avatars
     for (const a of this.avatars.values()) this.scene.remove(a.group);
@@ -191,8 +212,7 @@ export class Game {
       this.player.place(s[0], s[1], s[2], side > 0 ? 0 : Math.PI);   // face the street door
       this.player.stamina = 100; this.player.tired = false;
     }
-    this.monster.started = false; this.monster.setVisible(true);
-    this.monster.legs.forEach((l) => { l.init = false; l.t = 1; }); this.monster.arms.forEach((a) => { a.init = false; });
+    this.monster.reset(); this.monster.setVisible(true);
     this.hud.night(m);
   }
 
@@ -215,25 +235,42 @@ export class Game {
     this.sound.play('smash', 1, { x: m.x, y: m.y, z: m.z, max: 150 });
     this.shake = Math.max(this.shake, clamp(1.6 - d / 22, 0.15, 1.6));
     const side = m.z > 0 ? 1 : -1;
-    if (m.roof) {
-      for (let i = 0; i < 70; i++) this.debris.chunk(m.x + (Math.random() - 0.5) * 7, m.y + Math.random() * 1.2, m.z + side * Math.random() * 1.5, (Math.random() - 0.5) * 7, 2 + Math.random() * 6, side * (Math.random() * 9 - 2), 0.1 + Math.random() * 0.25);
+    const boxes = m.g ? this.world.smash(m.g) : [];
+    if (m.g) this.gone.add(m.g);
+    if (boxes.length) this.debris.burst(boxes, side);
+    if (m.roof || !boxes.length) {
+      for (let i = 0; i < (boxes.length ? 30 : 50); i++) this.debris.chunk(m.x + (Math.random() - 0.5) * 7, m.y + Math.random() * 1.2, m.z + side * Math.random() * 1.5, (Math.random() - 0.5) * 7, 2 + Math.random() * 6, side * (Math.random() * 9 - 2), 0.1 + Math.random() * 0.25);
       this.debris.puff(m.x, m.y + 0.5, m.z + side, 4, 8, 6);
-    } else {
-      const boxes = this.world.smash(m.f);
-      this.debris.burst(boxes, side);
     }
   }
 
   onDead(m) {
+    const grabbed = m.cause === 'hand' && m.h != null;
+    if (grabbed) this.monster.eating = m.h;
     if (m.id === this.me) {
-      this.alive = false; this.hp = 0; this.deadFx = 1; this.shake = 2; this.torchOn = false;
+      this.alive = false; this.hp = 0; this.shake = 2; this.torchOn = false; this.taking = null;
       this.sound.play('death', 1);
-      this.hud.dead(m.cause);
+      if (grabbed) { this.eaten = { h: m.h, t: 0 }; this.hud.grabbed(); }
+      else { this.deadFx = 1; this.hud.dead(m.cause); }
     } else {
       const a = this.avatars.get(m.id);
-      if (a) { a.alive = false; a.group.visible = false; this.sound.play('death', 0.6, { x: a.x, y: a.y, z: a.z, max: 60 }); }
+      if (a) {
+        a.alive = false;
+        if (grabbed) a.carry = m.h; else a.group.visible = false;
+        this.sound.play('death', 0.6, { x: a.x, y: a.y, z: a.z, max: 60 });
+      }
       this.hud.toast(`${this.names.get(m.id) || 'Someone'} was ${m.cause === 'hand' ? 'taken' : 'killed'}`, 'bad');
     }
+  }
+
+  // the hand has reached the mouth
+  onEaten(m) {
+    const mp = this.monster.mouthPos;
+    this.monster.eating = -1;
+    this.sound.play('eat', 1, m.id === this.me ? null : { x: mp.x, y: mp.y, z: mp.z, max: 120 });
+    if (this.debris) this.debris.puff(mp.x, mp.y, mp.z, 1.6, 10, 1.6, 0x7a0606);
+    if (m.id === this.me) { this.eaten = null; this.deadFx = 1; this.hurtFx = 1; this.blackout = 1; this.hud.dead('hand'); }
+    else { const a = this.avatars.get(m.id); if (a) { a.carry = null; a.group.visible = false; } }
   }
 
   // ------------------------------------------------------------------ actions
@@ -246,8 +283,11 @@ export class Game {
     this.torchOn = !this.torchOn; this.sound.play('torch', 1);
   }
   interact() {
-    if (!this.alive || this.prompt == null) return;
-    this.net.send({ t: 'door', id: this.prompt });
+    const p = this.prompt;
+    if (!this.alive || !p) return;
+    if (p.type === 'door') this.net.send({ t: 'door', id: p.id });
+    else if (p.type === 'closet') this.net.send({ t: 'closet', id: p.id });
+    else if (p.type === 'star' && !this.taking) { this.taking = { id: p.id, t: 0 }; this.sound.play('channel', 0.8); }
   }
   shoot() {
     if (this.shootCd > 0 || this.phase === 'inter') return;
@@ -307,22 +347,50 @@ export class Game {
           const fl = (P.crouch ? 1 : 0) | (P.sprinting ? 2 : 0) | (this.torchOn ? 4 : 0) | (Math.hypot(P.vx, P.vz) > 0.3 ? 8 : 0) | (this.ammo > 0 ? 16 : 0);
           this.net.send({ t: 'st', x: +P.x.toFixed(2), y: +P.y.toFixed(2), z: +P.z.toFixed(2), ry: +P.yaw.toFixed(2), fl });
         }
-        // pick things up by walking into them
+        // stars have to be taken by hand (E): it takes a moment, and it is not quiet
+        if (this.taking) {
+          const p = this.world.pickups.get(this.taking.id);
+          if (!p || Math.hypot(p.k.x - P.x, p.k.z - P.z) > 2.3 || Math.abs(p.k.y - P.y - 0.8) > 1.8) { if (p) p.take = 0; this.taking = null; }
+          else {
+            this.taking.t += dt / 1.1; p.take = Math.min(1, this.taking.t);
+            if (this.taking.t >= 1 && !this.taking.sent) { this.taking.sent = true; this.net.send({ t: 'pick', id: p.k.id }); }
+            if (this.taking && this.taking.t > 1.6) { p.take = 0; this.taking = null; }   // (a solo pick is confirmed synchronously)
+          }
+        }
+        // guns and bandages are picked up by walking into them
         for (const p of this.world.pickups.values()) {
+          if (p.k.k === 'star') continue;
           if (Math.abs(p.k.x - P.x) > 1.3 || Math.abs(p.k.z - P.z) > 1.3 || Math.abs(p.k.y - P.y - 0.8) > 1.5) continue;
           if ((this.pickT.get(p.k.id) || 0) > this.time) continue;
           this.pickT.set(p.k.id, this.time + 0.5); this.net.send({ t: 'pick', id: p.k.id });
         }
+      } else if (this.eaten) {
+        // held in its fist, carried up to the mouth
+        const e = this.eaten, tip = this.monster.arms[e.h].tip, hp = this.monster.mouthPos;
+        e.t += dt;
+        cam.position.lerp(_v.set(tip.x, tip.y + 0.2, tip.z), Math.min(1, dt * 10));
+        cam.lookAt(hp.x, hp.y, hp.z);
+        cam.rotation.z += Math.sin(e.t * 9) * 0.12;
+        this.shake = Math.max(this.shake, 0.5);
+        this.hurtFx = Math.max(this.hurtFx, Math.min(0.8, e.t * 0.25));
+        if (e.t > 6) { this.eaten = null; this.deadFx = 1; this.hud.dead('hand'); }
       } else if (playing || this.phase === 'inter' || this.phase === 'over') {
         this.spectate(dt);
       }
       this.mdx = this.mdy = 0;
 
       // others
-      for (const a of this.avatars.values()) if (a.tx !== undefined) a.update(dt, a.tx, a.ty, a.tz, a.tyaw, a.fl);
-      // monster
-      if (this.snap) this.monster.update(dt, this.snap.m);
-      this.world.update(dt, cam.position);
+      for (const a of this.avatars.values()) {
+        if (a.carry != null) {   // dangling from a fist
+          const tip = this.monster.arms[a.carry].tip;
+          a.x = tip.x; a.y = tip.y - 0.9; a.z = tip.z;
+          a.group.position.set(a.x, a.y, a.z); a.group.rotation.set(Math.sin(this.time * 11) * 0.5, this.time * 3, Math.cos(this.time * 9) * 0.5);
+          a.pose(dt, 6, false, false, false);
+        } else if (a.tx !== undefined) { a.group.rotation.x = a.group.rotation.z = 0; a.update(dt, a.tx, a.ty, a.tz, a.tyaw, a.fl); }
+      }
+      // monster + crawlers
+      if (this.snap) { this.monster.update(dt, this.snap.m); this.updateMinions(dt, this.snap.mn || []); }
+      this.world.update(dt, cam.position, this.fear || 0);
       this.debris.update(dt);
     }
 
@@ -337,7 +405,7 @@ export class Game {
     this.torch.intensity += ((this.torchOn && this.alive ? 18 : 0) - this.torch.intensity) * Math.min(1, dt * 20);
     if (this.viewGun) {
       this.viewGun.visible = this.alive && this.ammo > 0;
-      this.viewGun.position.set(0.2, -0.2 + this.recoil * 0.03, -0.42 + this.recoil * 0.08); this.viewGun.rotation.x = this.recoil * 0.4;
+      this.viewGun.position.set(0.17, -0.15 + this.recoil * 0.02, -0.4 + this.recoil * 0.06); this.viewGun.rotation.set(this.recoil * 0.4, 0.08, 0); this.viewGun.scale.setScalar(0.55);
     }
     this.hurtFx = Math.max(0, this.hurtFx - dt * 0.9);
     this.noiseLvl = Math.max(0, this.noiseLvl - dt * 0.9);
@@ -360,6 +428,7 @@ export class Game {
       md = Math.hypot(m.x - c.x, m.z - c.z);
       fear = clamp(1 - md / 48, 0, 1) * 0.7 + (m.st === 'hunt' ? 0.25 : 0);
       for (const h of m.hands) if (h) { const d = Math.hypot(h[1] - c.x, h[2] - c.y, h[3] - c.z); if (d < 9) fear = Math.max(fear, 1 - d / 14); }
+      for (const v of this.minions.values()) { const d = Math.hypot(v.x - c.x, (v.y - c.y) * 2, v.z - c.z); if (d < 12) fear = Math.max(fear, 1 - d / 13); }
       fear = Math.max(fear, this.expo > 0.7 ? (this.expo - 0.7) * 2 : 0);
       if (m.st === 'stun') fear *= 0.3;
     }
@@ -367,10 +436,29 @@ export class Game {
     snd.listener.x = c.x; snd.listener.y = c.y; snd.listener.z = c.z; snd.listener.yaw = cam.rotation.y;
     snd.update(dt, playing && this.alive ? this.fear : 0, playing ? md : 999);
 
-    this.post.render(dt, { hurt: this.hurtFx, fear: this.fear, gamma: set.gamma, dead: this.alive || !playing ? 0 : 0.6 });
+    this.blackout = Math.max(0, (this.blackout || 0) - dt * 0.5);
+    this.post.render(dt, { hurt: this.hurtFx, fear: this.fear, gamma: set.gamma * (1 - this.blackout * 0.85), dead: this.alive || !playing || this.eaten ? 0 : 0.6 });
 
     this.hudT -= dt;
     if (this.hudT <= 0 && this.world) { this.hudT = 0.1; this.updateHud(); }
+  }
+
+  updateMinions(dt, list) {
+    const seen = new Set();
+    for (const q of list) {
+      let v = this.minions.get(q[0]);
+      if (!v) {
+        v = new MinionView(this.scene, this.T); this.minions.set(q[0], v);
+        v.onStep = (x, y, z) => { if (this.time > this.skitT) { this.skitT = this.time + 0.07; this.sound.play('skitter', 0.7, { x, y, z, max: 22 }); } };
+        if (this.debris) this.debris.puff(q[1], q[2] + 0.5, q[3], 2, 6, 1.5, 0x1a2a1c);
+      }
+      v.tx = q[1]; v.ty = q[2]; v.tz = q[3]; v.tyaw = q[4]; v.chase = q[5];
+      seen.add(q[0]);
+    }
+    for (const [id, v] of this.minions) {
+      if (!seen.has(id)) v.dying = 1;
+      if (v.update(dt)) { v.dispose(); this.minions.delete(id); }
+    }
   }
 
   spectate(dt) {
@@ -386,28 +474,49 @@ export class Game {
 
   updateHud() {
     const P = this.player, playing = this.phase === 'night' || this.phase === 'dawn';
-    let zone = null;
+    let zone = null, hidden = false;
     this.prompt = null;
     if (playing && this.alive) {
       zone = zoneAt(this.W, P.x, P.y, P.z);
-      // nearest door we are facing
+      // what would E do? nearest thing we are facing: a star, a closet, a door
       let best = 2.4;
       const fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw);
+      const facing = (dx, dz, dist, tight) => dist < 0.75 || (dx * fx + dz * fz) / dist > (tight ? 0.6 : 0.35);
       for (const o of this.world.doors) {
         if (o.gone) continue;
         const d = o.d, dx = d.cx - P.x, dz = d.cz - P.z;
         if (Math.abs(dx) > 2.4 || Math.abs(dz) > 2.4 || Math.abs(d.y - P.y) > 1.2) continue;
         const dist = Math.hypot(dx, dz);
-        if (dist < best && (dist < 0.8 || (dx * fx + dz * fz) / dist > 0.35)) { best = dist; this.prompt = d.id; }
+        if (dist < best && facing(dx, dz, dist)) { best = dist; this.prompt = { type: 'door', id: d.id, text: d.open ? 'Close door' : 'Open door' }; }
       }
+      for (const o of this.world.closets) {
+        const c = o.c;
+        if (Math.abs(c.y - P.y) > 1.2) continue;
+        const inside = P.x > c.x0 - 0.1 && P.x < c.x1 + 0.1 && P.z > c.z0 - 0.1 && P.z < c.z1 + 0.1;
+        if (inside && !o.open) hidden = true;
+        // aim at the doors, not the middle of the box
+        const dx = c.cx + c.f[0] * 0.45 - P.x, dz = c.cz + c.f[1] * 0.45 - P.z, dist = Math.hypot(dx, dz);
+        if (inside) { best = 0; this.prompt = { type: 'closet', id: c.id, text: o.open ? 'Pull the closet shut' : 'Open the closet' }; }
+        else if (dist < Math.min(best, 2.0) && facing(dx, dz, dist)) { best = dist; this.prompt = { type: 'closet', id: c.id, text: o.open ? 'Close closet' : 'Open closet' }; }
+      }
+      let sb = 2.0;
+      for (const p of this.world.pickups.values()) {
+        if (p.k.k !== 'star' || Math.abs(p.k.y - P.y - 0.8) > 1.6) continue;
+        if (p.k.closet != null && !this.W.closets[p.k.closet].open) continue;
+        const dx = p.k.x - P.x, dz = p.k.z - P.z, dist = Math.hypot(dx, dz);
+        if (dist < sb && facing(dx, dz, dist, true)) { sb = dist; this.prompt = { type: 'star', id: p.k.id, text: 'Take the star' }; }
+      }
+      if (this.taking) this.prompt = { type: 'star', id: this.taking.id, text: 'Taking…', progress: Math.min(1, this.taking.t) };
     }
+    this.hidden = hidden;
     const others = [];
     for (const [id, a] of this.avatars) others.push({ name: this.names.get(id), hp: a.hp ?? 100, alive: a.alive });
     this.hud.update({
       playing, alive: this.alive, night: this.night, stars: this.stars, quota: this.quota, tl: this.tl, phase: this.phase, cd: this.cd,
       hp: Math.max(0, this.hp), stamina: P ? P.stamina : 100, tired: P && P.tired, ammo: this.ammo, torch: this.torchOn,
       zone: zone ? zone.label : '', indoors: zone ? zone.indoors : false, expo: this.expo, noise: this.noiseLvl,
-      prompt: this.prompt != null ? (this.W.doors[this.prompt].open ? 'Close door' : 'Open door') : null,
+      prompt: this.prompt ? this.prompt.text : null, progress: this.prompt && this.prompt.progress, hidden,
+      minions: [...this.minions.values()].filter((v) => !v.dying).length,
       others, crouch: P && P.crouch, spec: !this.alive && this.specName ? this.names.get(this.specName) : null, fear: this.fear,
     });
   }
