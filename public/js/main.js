@@ -4,7 +4,7 @@ import { Game } from './game.js';
 import { Net, LocalNet } from './net.js';
 import { Sound } from './audio.js';
 import { Avatar } from './avatar.js';
-import { dailySeed } from '/shared/world.js';
+import { dailySeed } from '../shared/world.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {

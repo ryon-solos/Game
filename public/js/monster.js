@@ -1,6 +1,6 @@
 // The thing in the street: procedural body, two stalking legs, eight inverse-kinematic arms.
 import * as THREE from 'three';
-import { shoulder } from '/shared/room.js';
+import { shoulder } from '../shared/room.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3(), _q = new THREE.Quaternion();

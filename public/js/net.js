@@ -1,6 +1,6 @@
 // Two transports with the same interface: a WebSocket to the server, or an in-browser room for solo play.
-import { Room } from '/shared/room.js';
-import { dailySeed } from '/shared/world.js';
+import { Room } from '../shared/room.js';
+import { dailySeed } from '../shared/world.js';
 
 export class Net {
   constructor(onMsg, onClose) { this.onMsg = onMsg; this.onClose = onClose; this.ws = null; this.solo = false; }
