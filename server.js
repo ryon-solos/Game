@@ -95,7 +95,7 @@ wss.on('connection', (ws) => {
         });
         room.members = new Map();
         rooms.set(id, room);
-        return join(c, room, msg);
+        return join(c, room, { name: msg.pname, char: msg.char });
       }
       case 'join': {
         const code = clean(msg.code, 8).toUpperCase();

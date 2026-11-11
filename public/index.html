@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Long Street</title>
+<link rel="stylesheet" href="/style.css">
+<script type="importmap">
+{ "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="backdrop"></div>
+
+<!-- ============================ HOME ============================ -->
+<section id="home" class="screen show">
+  <div class="home-left">
+    <h1 class="title">THE LONG<br><span>STREET</span></h1>
+    <p class="tag">Ten nights. Eight hands. Stay quiet.</p>
+    <nav class="menu">
+      <button id="btnSolo" class="big">Play alone</button>
+      <button id="btnMulti" class="big">Multiplayer</button>
+      <button id="btnSettings">Settings</button>
+      <button id="btnHow">How to survive</button>
+      <button id="btnFull">Toggle fullscreen</button>
+    </nav>
+    <p class="daily" id="daily"></p>
+  </div>
+  <div class="home-right panel">
+    <h2>Who are you?</h2>
+    <label class="field">Name
+      <input id="name" maxlength="16" placeholder="Enter a name" autocomplete="off" spellcheck="false">
+    </label>
+    <div class="chars">
+      <button class="char" data-char="m">Male</button>
+      <button class="char" data-char="f">Female</button>
+    </div>
+    <canvas id="preview" width="300" height="380"></canvas>
+  </div>
+</section>
+
+<!-- ============================ SERVER LIST ============================ -->
+<section id="multi" class="screen">
+  <div class="panel wide">
+    <header><h2>Lobbies</h2><span id="netState" class="dim"></span></header>
+    <div class="row">
+      <button id="btnRefresh">Refresh</button>
+      <button id="btnCreate" class="accent">Create lobby</button>
+      <span class="grow"></span>
+      <input id="code" maxlength="5" placeholder="CODE" autocomplete="off" spellcheck="false">
+      <button id="btnJoinCode">Join private</button>
+    </div>
+    <div id="rooms" class="rooms"></div>
+    <div class="row"><button class="back" data-go="home">Back</button></div>
+  </div>
+</section>
+
+<section id="create" class="screen">
+  <div class="panel">
+    <h2>Create a lobby</h2>
+    <label class="field">Lobby name <input id="lobbyName" maxlength="24" autocomplete="off"></label>
+    <label class="field">Visibility
+      <div class="seg" id="vis"><button data-v="1" class="on">Public</button><button data-v="0">Private (code only)</button></div>
+    </label>
+    <label class="field">Players <span id="maxOut">4</span>
+      <input id="maxPlayers" type="range" min="2" max="8" value="4">
+    </label>
+    <div class="row"><button class="back" data-go="multi">Back</button><span class="grow"></span><button id="btnDoCreate" class="accent">Create</button></div>
+  </div>
+</section>
+
+<section id="lobby" class="screen">
+  <div class="panel wide">
+    <header><h2 id="lobbyTitle">Lobby</h2><span id="lobbyVis" class="dim"></span></header>
+    <p class="codeLine">Invite code <b id="lobbyCode"></b> <button id="btnCopy" class="mini">Copy</button></p>
+    <ul id="lobbyPlayers" class="players"></ul>
+    <p id="lobbyHint" class="dim"></p>
+    <div class="row"><button id="btnLeave">Leave</button><span class="grow"></span><button id="btnStart" class="accent big">Begin night one</button></div>
+  </div>
+</section>
+
+<!-- ============================ OVERLAYS ============================ -->
+<section id="settings" class="overlay">
+  <div class="panel wide">
+    <h2>Settings</h2>
+    <div class="grid">
+      <label>Mouse sensitivity <output id="o_sens"></output><input id="s_sens" type="range" min="0.1" max="3" step="0.05"></label>
+      <label>Field of view <output id="o_fov"></output><input id="s_fov" type="range" min="60" max="105" step="1"></label>
+      <label>Master volume <output id="o_master"></output><input id="s_master" type="range" min="0" max="1" step="0.01"></label>
+      <label>Ambience volume <output id="o_music"></output><input id="s_music" type="range" min="0" max="1" step="0.01"></label>
+      <label>Effects volume <output id="o_sfx"></output><input id="s_sfx" type="range" min="0" max="1" step="0.01"></label>
+      <label>Brightness <output id="o_gamma"></output><input id="s_gamma" type="range" min="0.7" max="1.8" step="0.02"></label>
+      <label>Graphics quality
+        <div class="seg" id="s_quality"><button data-v="low">Low</button><button data-v="medium">Medium</button><button data-v="high">High</button></div>
+      </label>
+      <label>Options
+        <div class="checks">
+          <span><input type="checkbox" id="s_invertY"> Invert Y</span>
+          <span><input type="checkbox" id="s_headBob"> Head bob</span>
+        </div>
+      </label>
+    </div>
+    <p class="dim" id="qualityNote"></p>
+    <table class="keys">
+      <tr><td>W A S D</td><td>Move</td><td>Shift</td><td>Sprint (uses stamina, loud)</td></tr>
+      <tr><td>C / Ctrl</td><td>Crouch (silent)</td><td>Space</td><td>Jump</td></tr>
+      <tr><td>E</td><td>Open / close doors</td><td>F</td><td>Torch (it can see the light)</td></tr>
+      <tr><td>Left click</td><td>Fire flare pistol</td><td>Esc</td><td>Pause / menu</td></tr>
+    </table>
+    <div class="row"><button id="btnFull2">Toggle fullscreen</button><span class="grow"></span><button id="btnSettingsClose" class="accent">Done</button></div>
+  </div>
+</section>
+
+<section id="how" class="overlay">
+  <div class="panel wide">
+    <h2>How to survive</h2>
+    <ul class="how">
+      <li><b>Collect stars.</b> They lie in the street, on balconies, on terraces and inside flats. Gather the night's quota and dawn comes.</li>
+      <li><b>It hears you.</b> Sprinting, doors, landing from a jump and gunshots all carry. Crouch-walking is silent.</li>
+      <li><b>Its hands come through the windows.</b> One touch and you are out for the night. Back rooms behind a closed door are safer, on the early nights.</li>
+      <li><b>Do not stay put.</b> Thirty seconds in one place and it simply knows. Watch the presence meter in the bottom left.</li>
+      <li><b>It grows.</b> Each night it is taller, faster, has more hands in use, reaches deeper, remembers longer. From night five it opens doors. From night six it pretends to leave.</li>
+      <li><b>On nights one and two</b> it is too short to reach the top floors and terraces, so it smashes them instead. Debris hurts.</li>
+      <li><b>Flare pistols</b> stun it for a few seconds. The shot tells it exactly where you are.</li>
+      <li><b>Be indoors at dawn</b> to rest and recover health. Falls hurt. Bandages help.</li>
+    </ul>
+    <div class="row"><span class="grow"></span><button class="accent" id="btnHowClose">Close</button></div>
+  </div>
+</section>
+
+<section id="pause" class="overlay">
+  <div class="panel">
+    <h2 id="pauseTitle">Paused</h2>
+    <p class="dim" id="pauseNote"></p>
+    <nav class="menu">
+      <button id="btnResume" class="big accent">Click to play</button>
+      <button id="btnPauseSettings">Settings</button>
+      <button id="btnQuit">Leave game</button>
+    </nav>
+  </div>
+</section>
+
+<section id="banner" class="overlay clear"><div><h1 id="bannerTitle"></h1><p id="bannerSub"></p></div></section>
+
+<section id="over" class="overlay">
+  <div class="panel">
+    <h1 id="overTitle"></h1>
+    <p id="overSub"></p>
+    <nav class="menu"><button id="btnAgain" class="big accent">Try again</button><button id="btnMenu">Main menu</button></nav>
+  </div>
+</section>
+
+<!-- ============================ HUD ============================ -->
+<div id="hud">
+  <div class="top">
+    <span id="hNight"></span><span id="hStars"></span><span id="hTime"></span>
+  </div>
+  <ul id="hOthers"></ul>
+  <div id="cross"></div>
+  <div id="prompt"></div>
+  <div id="alert"></div>
+  <div id="toasts"></div>
+  <div id="specNote"></div>
+  <div class="loc">
+    <div id="hZone"></div>
+    <div class="meter"><label>PRESENCE</label><div class="bar"><i id="hExpo"></i></div></div>
+    <div class="meter"><label>NOISE</label><div class="bar"><i id="hNoise"></i></div></div>
+  </div>
+  <div class="vitals">
+    <div id="hAmmo"></div>
+    <div class="meter"><label>HEALTH <b id="hHpN"></b></label><div class="bar hp"><i id="hHp"></i></div></div>
+    <div class="meter"><label>STAMINA</label><div class="bar st"><i id="hSt"></i></div></div>
+  </div>
+</div>
+<div id="err"></div>
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>
