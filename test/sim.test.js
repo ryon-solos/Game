@@ -19,7 +19,7 @@ function run(seed, nBots, mode) {
   const room = new Room({
     id: 'x', seed, max: 8, jitter: 0, send: (pid, m) => {
       if (m.t === 'dead') log.dead++;
-      if (m.t === 'smash') log.smash++;
+      if (m.t === 'brk' && m.big) log.smash++;
       if (m.t === 'nightEnd') log.nights++;
       if (m.t === 'over') log.over = m;
       if (m.t === 'alert') log.reveal++;
@@ -134,5 +134,98 @@ for (let n = 1; n <= 10; n++) { const c = nightCfg(n, 1); assert.ok(c.h > 0 && c
   assert.ok(maxY > 6, 'crawler climbs the stairs'); assert.ok(hurt >= 1, 'crawler finds and bites the player');
   assert.strictEqual(room.minions.length, 0, 'crawlers expire after their minute');
   assert.ok(msgs.some((m) => m.t === 'fx' && m.k === 'mdie'));
+}
+
+// ---- patrol: with nobody making a sound it still walks its round of the whole street
+{
+  const room = new Room({ id: 'p', seed: 20261111, max: 4, jitter: 3, send: () => {} });
+  room.addPlayer('a', 'A', 'm'); room.handle('a', { t: 'start' });
+  const p = room.players.get('a'), L = room.W.L;
+  let lo = 1e9, hi = -1e9;
+  for (let i = 0; i < 20 * 240 && room.phase === 'night'; i++) {
+    room.handle('a', { t: 'st', x: p.x, y: 3.2 * 2 + 1.6, z: p.z, ry: 0, fl: 1 }); p.expo = 0; p.hp = 100;
+    room.kill = () => {}; room.tick(0.05);
+    lo = Math.min(lo, room.m.x); hi = Math.max(hi, room.m.x);
+  }
+  console.log('patrol: covered x', lo.toFixed(0), '..', hi.toFixed(0), 'of', L);
+  assert.ok(hi - lo > L * 0.75, 'the monster must walk most of the street without being provoked');
+}
+
+// ---- hands are solid: stopped by walls, they draw back and punch through; nothing passes through an intact wall
+for (const night of [1, 4]) {
+  const msgs = [];
+  const room = new Room({ id: 'h', seed: 20261111, max: 4, jitter: 1, send: (pid, m) => msgs.push(m) });
+  room.addPlayer('a', 'A', 'm'); room.handle('a', { t: 'start' });
+  if (night > 1) room.startNight(night);
+  const W = room.W, p = room.players.get('a');
+  const flat = W.flats.find((f) => !f.roof && f.f === 1 && f.rooms.length > 1 && f.cx > 30 && f.cx < 90), back = flat.rooms[1];
+  const px = (back.x0 + back.x1) / 2, pz = (back.z0 + back.z1) / 2, py = flat.y0 + 0.05;
+  W.doors[back.door].open = false;
+  room.kill = () => {}; room.grab = () => {};
+  room.m.x = flat.cx; room.m.st = 'search'; room.m.searchEnd = 1e9; room.time = 20;
+  assert.ok(room.searchFlat(flat, 1, 14, { x: px }));
+  const hand = room.m.hands.find((h) => h.task);
+  const inside = (e, h) => h.x > e.x0 && h.x < e.x1 && h.y > e.y0 && h.y < e.y1 && h.z > e.z0 && h.z < e.z1;
+  let reached = false, blocked = 0;
+  for (let i = 0; i < 20 * 14; i++) {
+    room.handle('a', { t: 'st', x: px, y: py, z: pz, ry: 0, fl: 0 }); p.expo = 0; p.hp = 100; room.m.stims = []; room.m.st = 'search';
+    room.tick(0.05);
+    if (!hand.task || hand.task.type !== 'search') break;
+    if (hand.task.blk) blocked++;
+    for (const e of flat.brk) {
+      if (e.gone || (e.kind !== 'wall' && e.kind !== 'door' && !(e.kind === 'facade' && night >= 3))) continue;
+      if (e.kind === 'door' && W.doors[e.door].open) continue;
+      assert.ok(!inside(e, hand), `night ${night}: hand is inside the intact ${e.kind} ${e.g}`);
+    }
+    if (Math.hypot(hand.x - px, hand.z - pz) < 1) reached = true;
+  }
+  const brk = msgs.filter((m) => m.t === 'brk'), kinds = new Set(brk.map((m) => m.k));
+  console.log(`hands n${night}: reached back room ${reached}, held up for ${(blocked * 0.05).toFixed(1)}s, broke`, [...kinds].join(','), `(${brk.reduce((n, m) => n + m.gs.length, 0)} pieces)`);
+  assert.ok(reached, 'the hand must get to the back room');
+  assert.ok(blocked > 5 && msgs.some((m) => m.t === 'fx' && m.k === 'bang'), 'a wall must hold it up first');
+  assert.ok(kinds.has('wall') || kinds.has('door'), 'it must break through an inner wall or door');
+  assert.strictEqual(kinds.has('facade'), night >= 3, 'from night 3 the hand is too big for the window and takes the wall out');
+  assert.ok(brk.every((m) => m.gs.every((g) => W.brk[g].gone && room.broken.has(g))));
+}
+
+// ---- eaten: carried out through the opening and up in front of the face, never through the building
+{
+  const msgs = [];
+  const room = new Room({ id: 'e', seed: 20261111, max: 4, jitter: 2, send: (pid, m) => msgs.push(m) });
+  room.addPlayer('a', 'A', 'm'); room.handle('a', { t: 'start' });
+  const W = room.W, p = room.players.get('a');
+  const flat = W.flats.find((f) => !f.roof && f.f === 1 && f.cx > 30 && f.cx < 90), r0 = flat.rooms[0];
+  const px = (r0.x0 + r0.x1) / 2, pz = flat.side * (K.FRONT + 2.2), py = flat.y0 + 0.05;
+  room.m.x = flat.cx; room.m.st = 'search'; room.m.searchEnd = 1e9; room.time = 20;
+  room.searchFlat(flat, 1, 14, { x: px });
+  let seenEat = false, maxInsideY = 0;
+  for (let i = 0; i < 20 * 30 && room.phase === 'night'; i++) {
+    if (p.alive) room.handle('a', { t: 'st', x: px, y: py, z: pz, ry: 0, fl: 0 });
+    p.expo = 0; room.tick(0.05);
+    const h = room.m && room.m.hands.find((q) => q.task && q.task.type === 'eat');
+    if (h) { seenEat = true; if (Math.abs(h.z) > K.FRONT + 0.3) maxInsideY = Math.max(maxInsideY, h.y - flat.y0); }
+  }
+  assert.ok(seenEat && msgs.some((m) => m.t === 'eaten'), 'victim is eaten');
+  assert.ok(maxInsideY < 3.0, `the fist must leave by the opening, not up through the ceiling (rose ${maxInsideY.toFixed(1)} m indoors)`);
+  assert.strictEqual(room.phase, 'over');
+  console.log('eat: left through the opening, then up to the face; game over after it swallows');
+}
+
+// ---- a thrown bottle draws it; its body snaps the cables it walks through
+{
+  const msgs = [];
+  const room = new Room({ id: 'b', seed: 20261111, max: 4, jitter: 5, send: (pid, m) => msgs.push(m) });
+  room.addPlayer('a', 'A', 'm'); room.handle('a', { t: 'start' });
+  const p = room.players.get('a');
+  p.bottles = 1; room.time = 20;
+  const tx = room.m.x > 60 ? room.m.x - 26 : room.m.x + 26;
+  p.x = tx + 10; p.z = 9;
+  room.handle('a', { t: 'throw', x: tx, y: 0.1, z: 2 });
+  assert.strictEqual(p.bottles, 0);
+  let near = false;
+  for (let i = 0; i < 20 * 30; i++) { room.handle('a', { t: 'st', x: tx + 10, y: 3.3, z: 9.5, ry: 0, fl: 1 }); p.expo = 0; room.kill = () => {}; room.tick(0.05); if (Math.abs(room.m.x - tx) < 4) near = true; }
+  assert.ok(near, 'the monster goes to where the bottle broke');
+  assert.ok(msgs.some((m) => m.t === 'brk' && m.k === 'cable'), 'cables snap across its body');
+  console.log('bottle: lured the monster; cables snapped:', msgs.filter((m) => m.t === 'brk' && m.k === 'cable').length);
 }
 console.log('ok');
