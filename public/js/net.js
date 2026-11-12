@@ -1,12 +1,22 @@
 // Two transports with the same interface: a WebSocket to the server, or an in-browser room for solo play.
-import { Room } from '/shared/room.js';
-import { dailySeed } from '/shared/world.js';
+import { Room } from '../shared/room.js';
+import { dailySeed } from '../shared/world.js';
+
+// Address of the lobby server: ?server=host in the page URL, else config.js, else the host that served the page.
+export function serverUrl() {
+  let s = new URLSearchParams(location.search).get('server') || window.GAME_SERVER || '';
+  const secure = location.protocol === 'https:';
+  if (!s) return (secure ? 'wss://' : 'ws://') + location.host;
+  if (/^https?:\/\//.test(s)) return s.replace(/^http/, 'ws').replace(/\/+$/, '');
+  if (/^wss?:\/\//.test(s)) return s.replace(/\/+$/, '');
+  return (secure || !/^(localhost|127\.|192\.168\.|10\.)/.test(s) ? 'wss://' : 'ws://') + s.replace(/\/+$/, '');
+}
 
 export class Net {
   constructor(onMsg, onClose) { this.onMsg = onMsg; this.onClose = onClose; this.ws = null; this.solo = false; }
   connect() {
     return new Promise((res, rej) => {
-      const ws = this.ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+      const ws = this.ws = new WebSocket(serverUrl());
       ws.onopen = () => res();
       ws.onerror = () => rej(new Error('Could not reach the game server'));
       ws.onclose = () => { this.ws = null; this.onClose && this.onClose(); };

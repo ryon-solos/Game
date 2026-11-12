@@ -2,6 +2,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { Room } from './shared/room.js';
@@ -23,6 +24,7 @@ const MOUNTS = [
 const server = http.createServer((req, res) => {
   let url;
   try { url = decodeURIComponent(req.url.split('?')[0]); } catch { res.writeHead(400); return res.end(); }
+  if (url === '/healthz') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('ok'); }
   if (url === '/') url = '/index.html';
   for (const [prefix, dir] of MOUNTS) {
     if (!url.startsWith(prefix)) continue;
@@ -126,4 +128,9 @@ setInterval(() => {
   }
 }, 30000);
 
-server.listen(PORT, () => console.log(`The Long Street is running on http://localhost:${PORT}`));
+server.listen(PORT, () => {
+  console.log(`\nThe Long Street is running:\n  on this computer   http://localhost:${PORT}`);
+  // other devices on the same Wi-Fi / LAN can join with these
+  for (const list of Object.values(os.networkInterfaces())) for (const a of list || []) if (a.family === 'IPv4' && !a.internal) console.log(`  on your network    http://${a.address}:${PORT}`);
+  console.log('');
+});

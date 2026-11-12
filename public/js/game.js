@@ -1,6 +1,6 @@
 // The in-game client: rendering, input, local player, and applying what the simulation says.
 import * as THREE from 'three';
-import { genWorld, zoneAt, K } from '/shared/world.js';
+import { genWorld, zoneAt, K } from '../shared/world.js';
 import { makeTextures, makeMaterials } from './textures.js';
 import { WorldView } from './worldview.js';
 import { Player } from './player.js';

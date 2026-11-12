@@ -1,0 +1,10 @@
+# Netlify serves the static front-end only. It cannot run server.js (no long-lived
+# processes, no WebSocket servers), so multiplayer needs the server hosted elsewhere
+# (see render.yaml) and its address set as the GAME_SERVER environment variable in
+# Netlify: Site configuration > Environment variables.
+[build]
+  command = "npm run build:static"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"

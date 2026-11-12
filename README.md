@@ -3,28 +3,83 @@
 A browser-based first-person horror game, solo or co-op. A long street of apartment blocks, a
 thing with eight hands walking it, ten nights to survive. Built from `GAME_SPEC.md`.
 
-## Run it
+## Run it on your own computer
+
+You need [Node.js](https://nodejs.org) 18 or newer and Git. First time only:
 
 ```bash
-npm install
+git clone https://github.com/ryon-solos/Game.git
 ```
 
 ```bash
-npm start
+cd Game
 ```
 
-Then open http://localhost:3000. Set `PORT` to change the port.
-
-- **Play alone** runs the whole simulation inside the browser tab.
-- **Multiplayer** needs the Node server (it holds the lobbies and runs the monster). Any host that
-  runs a long-lived Node process with WebSockets works (Render, Railway, Fly.io, a VPS). Static
-  hosts such as Netlify or GitHub Pages cannot run the multiplayer server.
+After that, one command pulls the latest code from GitHub, installs anything new and starts the game:
 
 ```bash
-npm test
+npm run play
 ```
 
-runs the headless simulation and physics checks.
+Then open http://localhost:3000. (`./play.sh` on macOS/Linux and double-clicking `play.bat` on
+Windows do the same thing.) Other commands:
+
+| Command | What it does |
+|---|---|
+| `npm start` | Run the game without updating |
+| `npm run dev` | Run it and restart the server whenever server code changes (browser code only needs a page refresh) |
+| `npm run update` | Only pull the latest code and install dependencies |
+| `npm test` | Headless simulation and physics checks |
+| `PORT=4000 npm start` | Use another port |
+
+### Playing with friends from your computer
+
+- **Same Wi-Fi:** when the server starts it prints an "on your network" address such as
+  `http://192.168.1.20:3000`. Friends on the same network open that.
+- **Over the internet, no account, free:** install
+  [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
+  and, while the game is running, run the command below. It prints a temporary public
+  `https://….trycloudflare.com` address that anyone can open. It lasts until you close it.
+
+```bash
+cloudflared tunnel --url http://localhost:3000
+```
+
+## Hosting
+
+The game has two parts. The **front-end** is static files. The **multiplayer server** (`server.js`)
+is a long-running Node process that keeps WebSocket connections open; it also serves the
+front-end, so hosting the server alone is enough.
+
+| Host | Solo | Multiplayer | Notes |
+|---|---|---|---|
+| **Render** (free web service) | yes | yes | Runs `server.js` as is. Config is in `render.yaml`. Sleeps after 15 minutes without traffic and takes about a minute to wake. |
+| **GitHub Pages** (free) | yes | only with a server elsewhere | Static only. Deployed automatically from `main` by `.github/workflows/pages.yml`. |
+| **Netlify** (any plan) | yes | only with a server elsewhere | Static only: Netlify cannot run a WebSocket server on any plan. Config is in `netlify.toml`. |
+
+### Free, everything in one place: Render
+
+1. Sign in at https://render.com with GitHub.
+2. New > Blueprint, pick this repository. Render reads `render.yaml` and creates the service.
+3. It gives you an address like `https://the-long-street.onrender.com`. That is the whole game,
+   solo and multiplayer. Every push to `main` redeploys it.
+
+### Static front-end (GitHub Pages or Netlify) + server on Render
+
+Set the server's address as `GAME_SERVER` (for example `the-long-street.onrender.com`):
+
+- **GitHub Pages:** repository Settings > Secrets and variables > Actions > Variables.
+- **Netlify:** Site configuration > Environment variables.
+
+Without it the static site still plays solo. For a quick test you can also add
+`?server=the-long-street.onrender.com` to the page address.
+
+```bash
+npm run build:static
+```
+
+builds the static front-end into `dist/` (set `GAME_SERVER` in the environment to bake the
+address in).
 
 ## How it plays
 
@@ -61,6 +116,12 @@ Controls: `WASD` move, `Shift` sprint, `C`/`Ctrl` crouch, `Space` jump, `E` door
 
 ```
 server.js            static files + WebSocket lobbies
+play.sh / play.bat   update from GitHub and run locally
+render.yaml          Render (server) deployment
+netlify.toml         Netlify (static front-end) deployment
+.github/workflows/   GitHub Pages deployment of the static front-end
+scripts/             static build
+public/config.js     address of the multiplayer server for static hosting
 shared/world.js      deterministic street generator (runs on server and client)
 shared/room.js       authoritative game simulation and monster AI
 public/js/game.js    rendering, input, local player

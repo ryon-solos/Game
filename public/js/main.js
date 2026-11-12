@@ -1,10 +1,10 @@
 // Menus, lobby flow, settings and HUD. The 3D game itself lives in game.js.
 import * as THREE from 'three';
 import { Game } from './game.js';
-import { Net, LocalNet } from './net.js';
+import { Net, LocalNet, serverUrl } from './net.js';
 import { Sound } from './audio.js';
 import { Avatar } from './avatar.js';
-import { dailySeed } from '/shared/world.js';
+import { dailySeed } from '../shared/world.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -170,7 +170,7 @@ async function openMulti() {
     net = new Net(onMsg, () => { $('netState').textContent = 'Disconnected'; if (mode === 'multi') { error('Lost connection to the server'); if (screen === 'game' || screen === 'lobby') leaveGame(); } });
     try { await net.connect(); $('netState').textContent = 'Connected'; } catch (e) {
       $('netState').textContent = 'Offline';
-      $('rooms').innerHTML = '<div class="empty">No game server is reachable from this page.<br>Multiplayer needs the Node server running (npm start). Solo play still works.</div>';
+      $('rooms').innerHTML = `<div class="empty">Could not reach the multiplayer server at<br><b>${esc(serverUrl())}</b><br><br>A free server sleeps when idle and takes about a minute to wake: wait and press Refresh.<br>Solo play works without it.</div>`;
       net = null; return;
     }
   }
@@ -211,7 +211,7 @@ click('btnHow', () => overlay('how', true));
 click('btnHowClose', () => overlay('how', false));
 click('btnFull', () => fullscreen());
 click('btnFull2', () => fullscreen());
-click('btnRefresh', refresh);
+click('btnRefresh', () => (net && net.open ? refresh() : openMulti()));
 click('btnCreate', () => { $('lobbyName').value = `${playerName()}'s street`; show('create'); });
 click('btnDoCreate', () => {
   if (!net || !net.open) return error('Not connected');

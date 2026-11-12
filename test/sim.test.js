@@ -17,7 +17,7 @@ for (const seed of [1, 20261111, 987654]) {
 function run(seed, nBots, mode) {
   const log = { dead: 0, smash: 0, nights: 0, over: null, states: new Set(), reveal: 0 };
   const room = new Room({
-    id: 'x', seed, max: 8, send: (pid, m) => {
+    id: 'x', seed, max: 8, jitter: 0, send: (pid, m) => {
       if (m.t === 'dead') log.dead++;
       if (m.t === 'smash') log.smash++;
       if (m.t === 'nightEnd') log.nights++;
