@@ -8,6 +8,9 @@ services:
     plan: free
     buildCommand: npm install
     startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    branch: main
     envVars:
       - key: NODE_VERSION
         value: "22"

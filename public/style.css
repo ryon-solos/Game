@@ -96,6 +96,10 @@ input[type=range] { width: 100%; accent-color: var(--blood); }
 body.ingame #hud { display: block; }
 #hud .top { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: 26px; font-size: 18px; letter-spacing: .16em; background: rgba(4, 9, 11, .5); padding: 8px 22px; border: 1px solid var(--line); white-space: nowrap; }
 #hStars { color: var(--amber); }
+#hMin { color: #9cffb0; animation: pulse 1s infinite; }
+#hMin:empty { display: none; }
+#prompt .bar { margin-top: 8px; height: 5px; width: 220px; } #prompt .bar i { background: var(--amber); transition: none; }
+#prompt { text-align: center; }
 #hTime.late { color: var(--blood); }
 #hOthers { position: absolute; top: 18px; right: 20px; list-style: none; margin: 0; padding: 0; font-size: 14px; text-align: right; }
 #hOthers li { margin-bottom: 4px; letter-spacing: .06em; }

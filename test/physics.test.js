@@ -57,6 +57,27 @@ for (const seed of [20261111, 7, 4242]) {
     for (let i = 0; i < 60; i++) { P.yaw = b.side > 0 ? 0 : Math.PI; P.update(1 / 60, { fwd: true }); }
     assert.ok(zoneAt(W, P.x, P.y, P.z).balc, 'railing should stop a walking player');
   }
+  // closets are hollow: you can walk in when open, not when closed
+  for (const c of W.closets.slice(0, 40)) {
+    const horiz = c.h0[1] === c.h1[1];
+    const dc = col.add((c.h0[0] + c.h1[0]) / 2 - c.f[0] * 0.04, c.y + 1.02, (c.h0[1] + c.h1[1]) / 2 - c.f[1] * 0.04, horiz ? c.w : 0.08, 2.04, horiz ? 0.08 : c.w);
+    const P = new Player(col);
+    const go = () => { P.place(c.cx + c.f[0] * 0.92, c.y + 0.05, c.cz + c.f[1] * 0.92); for (let i = 0; i < 90; i++) { P.yaw = Math.atan2(c.f[0], c.f[1]); P.update(1 / 60, { fwd: true }); } return P.x > c.x0 - 0.05 && P.x < c.x1 + 0.05 && P.z > c.z0 - 0.05 && P.z < c.z1 + 0.05; };
+    assert.ok(!col.test(c.cx + c.f[0] * 0.92 - 0.3, c.y + 0.1, c.cz + c.f[1] * 0.92 - 0.3, c.cx + c.f[0] * 0.92 + 0.3, c.y + 1.7, c.cz + c.f[1] * 0.92 + 0.3), `seed ${seed}: closet ${c.id} front is blocked`);
+    assert.ok(!go(), 'closed closet keeps you out');
+    dc.on = false;
+    assert.ok(go(), `seed ${seed}: cannot walk into open closet ${c.id}`);
+  }
+  // crawler paths never cross a wall (furniture does not count: they climb over it)
+  const walls = new Colliders();
+  for (const b of W.boxes) if (b.c && !b.fu) walls.add(b.x, b.y, b.z, b.sx, b.sy, b.sz);
+  for (const b of W.buildings) b.nav.n.forEach((n, i) => {
+    for (const j of b.nav.e[i]) {
+      const m = b.nav.n[j], dx = m.x - n.x, dy = m.y - n.y, dz = m.z - n.z, len = Math.hypot(dx, dy, dz);
+      const t = walls.ray(n.x, n.y + 0.7, n.z, dx / len || 1e-9, dy / len || 1e-9, dz / len || 1e-9, len);
+      assert.ok(!(t < len - 0.05), `seed ${seed} block ${b.name}: crawler path ${i}->${j} hits a wall at ${t.toFixed(2)} of ${len.toFixed(2)} (${n.x.toFixed(1)},${n.y.toFixed(1)},${n.z.toFixed(1)})`);
+    }
+  });
   // falling from a 4-storey roof hurts, one storey does not
   const P = new Player(col);
   const fall = (h) => { P.place(60, h, 0); P.ground = false; let v = 0; for (let i = 0; i < 400; i++) for (const e of P.update(1 / 60, {})) if (e.t === 'land') v = Math.max(v, e.v); return v; };

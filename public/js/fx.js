@@ -44,6 +44,15 @@ export class Post {
     this.renderer = renderer; this.scene = scene; this.camera = camera;
     this.composer = new EffectComposer(renderer);
     this.composer.addPass(new RenderPass(scene, camera));
+    // one invalid (NaN / infinite) pixel would be smeared over the whole frame by the bloom blur: scrub them first
+    this.composer.addPass(new ShaderPass({
+      uniforms: { tDiffuse: { value: null } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+        void main(){ vec3 c = texture2D(tDiffuse, vUv).rgb;
+          if (!(c.r >= 0.0 && c.r < 1e4) || !(c.g >= 0.0 && c.g < 1e4) || !(c.b >= 0.0 && c.b < 1e4)) c = vec3(0.0);
+          gl_FragColor = vec4(min(c, vec3(24.0)), 1.0); }`,
+    }));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.75, 0.6, 0.72);
     if (quality !== 'low') this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
@@ -87,12 +96,12 @@ export class Debris {
     p.wx = (Math.random() - 0.5) * 12; p.wy = (Math.random() - 0.5) * 12; p.wz = (Math.random() - 0.5) * 12;
     p.floor = this.col.floorBelow(x, y, z);
   }
-  puff(x, y, z, size, n = 1, spread = 1) {
+  puff(x, y, z, size, n = 1, spread = 1, color = 0x8a8580) {
     for (let i = 0; i < n; i++) {
       const d = this.dust[this.dn]; this.dn = (this.dn + 1) % this.dust.length;
       d.s.position.set(x + (Math.random() - 0.5) * spread, y + (Math.random() - 0.5) * spread * 0.6, z + (Math.random() - 0.5) * spread);
       d.vx = (Math.random() - 0.5) * 1.5; d.vy = 0.3 + Math.random() * 0.8; d.vz = (Math.random() - 0.5) * 1.5;
-      d.t = 0; d.life = 2.5 + Math.random() * 2.5; d.size = size * (0.6 + Math.random() * 0.8); d.s.visible = true;
+      d.s.material.color.setHex(color); d.t = 0; d.life = 2.5 + Math.random() * 2.5; d.size = size * (0.6 + Math.random() * 0.8); d.s.visible = true;
     }
   }
 

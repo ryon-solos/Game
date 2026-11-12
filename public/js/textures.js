@@ -130,6 +130,16 @@ export function makeTextures(aniso = 4) {
     x.beginPath(); x.moveTo(-78, 46); x.lineTo(0, -88); x.lineTo(78, 46); x.closePath(); x.lineWidth = 2; x.stroke();
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; T.sigil = t;
   }
+  { // monster hide: mottled, veined
+    const [c, x] = cv(256); x.fillStyle = '#3a3438'; x.fillRect(0, 0, 256, 256);
+    stains(x, 256, 30, 'rgba(0,0,0,0.5)', 50); stains(x, 256, 14, 'rgba(120,40,40,0.35)', 40); stains(x, 256, 10, 'rgba(160,150,130,0.18)', 30);
+    x.lineCap = 'round';
+    for (let i = 0; i < 26; i++) {
+      let px = rr(0, 256), py = rr(0, 256); x.strokeStyle = `rgba(${rr(110, 190) | 0},20,24,${rr(0.3, 0.7)})`; x.lineWidth = rr(0.6, 2.4);
+      x.beginPath(); x.moveTo(px, py); for (let k = 0; k < 10; k++) { px += rr(-22, 22); py += rr(-6, 26); x.lineTo(px, py); } x.stroke();
+    }
+    grain(x, 256, 30); T.flesh = tex(c, aniso);
+  }
   { // soft round sprite (dust, glow)
     const [c, x] = cv(64); const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
     g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.4, 'rgba(255,255,255,0.45)'); g.addColorStop(1, 'rgba(255,255,255,0)');
@@ -140,6 +150,8 @@ export function makeTextures(aniso = 4) {
 
 // Standard material whose texture is mapped in world space (boxes of any size share one material).
 function ws(params, metres) {
+  if (params.map && params.bump) { params.bumpMap = params.map; params.bumpScale = params.bump; }
+  delete params.bump;
   const m = new THREE.MeshStandardMaterial(params);
   if (!params.map) return m;
   const sc = (1 / metres).toFixed(4);
@@ -155,6 +167,9 @@ function ws(params, metres) {
         vec3 an = abs(normal);
         vec2 wuv = an.x > 0.5 ? wsp.zy : (an.y > 0.5 ? wsp.xz : wsp.xy);
         vMapUv = wuv * ${sc};
+        #ifdef USE_BUMPMAP
+          vBumpMapUv = vMapUv;
+        #endif
       }
       #endif`);
   };
@@ -162,22 +177,27 @@ function ws(params, metres) {
   return m;
 }
 
-export function makeMaterials(T) {
+// materials whose boxes get rounded edges (furniture-sized things only)
+export const SOFT = new Set(['cloth', 'clothred', 'clothgreen', 'mattress', 'white', 'fridge', 'car', 'car2', 'rust', 'wood', 'wooddark', 'black']);
+
+export function makeMaterials(T, bumps = true) {
   const M = {};
-  const S = (k, map, color, rough, metres, extra) => { M[k] = ws(Object.assign({ map, color, roughness: rough, metalness: 0 }, extra), metres); };
-  S('brick', T.brick, 0xa89a90, 0.95, 2.2); S('brick2', T.brick, 0x8f9aa0, 0.95, 2.2); S('brick3', T.brick, 0xb07a66, 0.95, 2.2);
-  S('concrete', T.concrete, 0x9a9c9c, 0.9, 3); S('walk', T.concrete, 0x80858a, 0.85, 2.4); S('roof', T.concrete, 0x55595c, 0.95, 3.5);
-  S('asphalt', T.asphalt, 0x8a9096, 0.72, 5);
-  S('floorwood', T.planks, 0xa08a74, 0.7, 2.2); S('floorwood2', T.planks, 0x6f6660, 0.65, 2.2); S('floortile', T.tile, 0x9aa09c, 0.45, 1.2);
-  S('ceil', T.concrete, 0x6c6a64, 1, 2.5);
-  [0x6f8f90, 0x7f8a66, 0x9a7474, 0xa08c58, 0x66788f, 0xa39d8c].forEach((c, i) => S('wall' + i, T.paper, c, 0.92, 1.5));
-  S('wood', T.wood, 0xa58a6c, 0.7, 1); S('wooddark', T.wood, 0x5d4a3c, 0.6, 1);
-  S('cloth', T.fabric, 0x4f6166, 1, 0.4); S('clothred', T.fabric, 0x7a2f2c, 1, 0.4); S('clothgreen', T.fabric, 0x4e5a3a, 1, 0.4);
-  S('mattress', T.fabric, 0xa9a290, 1, 0.5);
-  S('metal', T.metal, 0x8a8f94, 0.5, 1, { metalness: 0.75 }); S('rail', T.metal, 0x3d4246, 0.6, 1, { metalness: 0.7 });
-  S('rust', T.metal, 0x7a5236, 0.85, 1.4, { metalness: 0.3 }); S('car', T.metal, 0x35454f, 0.45, 2, { metalness: 0.6 }); S('car2', T.metal, 0x5a2f2c, 0.45, 2, { metalness: 0.6 });
+  const S = (k, map, color, rough, metres, extra) => { M[k] = ws(Object.assign({ map, color, roughness: rough, metalness: 0 }, bumps ? extra : Object.assign({}, extra, { bump: 0 })), metres); };
+  S('brick', T.brick, 0xa89a90, 0.95, 2.2, { bump: 2.2 }); S('brick2', T.brick, 0x8f9aa0, 0.95, 2.2, { bump: 2.2 }); S('brick3', T.brick, 0xb07a66, 0.95, 2.2, { bump: 2.2 });
+  S('concrete', T.concrete, 0x9a9c9c, 0.9, 3, { bump: 1.2 }); S('walk', T.concrete, 0x80858a, 0.85, 2.4, { bump: 1.2 }); S('roof', T.concrete, 0x55595c, 0.95, 3.5, { bump: 1.5 });
+  S('asphalt', T.asphalt, 0x8a9096, 0.55, 5, { bump: 1.6 });
+  S('floorwood', T.planks, 0xa08a74, 0.6, 2.2, { bump: 1.2 }); S('floorwood2', T.planks, 0x6f6660, 0.55, 2.2, { bump: 1.2 }); S('floortile', T.tile, 0x9aa09c, 0.35, 1.2, { bump: 1.4 });
+  S('ceil', T.concrete, 0x6c6a64, 1, 2.5, { bump: 0.8 });
+  [0x6f8f90, 0x7f8a66, 0x9a7474, 0xa08c58, 0x66788f, 0xa39d8c].forEach((c, i) => S('wall' + i, T.paper, c, 0.9, 1.5, { bump: 0.5 }));
+  S('wood', T.wood, 0xa58a6c, 0.6, 1, { bump: 0.6 }); S('wooddark', T.wood, 0x5d4a3c, 0.5, 1, { bump: 0.6 }); S('bark', T.wood, 0x2e2822, 1, 0.5, { bump: 2.5 });
+  S('cloth', T.fabric, 0x4f6166, 1, 0.4, { bump: 0.5 }); S('clothred', T.fabric, 0x7a2f2c, 1, 0.4, { bump: 0.5 }); S('clothgreen', T.fabric, 0x4e5a3a, 1, 0.4, { bump: 0.5 });
+  S('mattress', T.fabric, 0xa9a290, 1, 0.5, { bump: 0.5 });
+  S('metal', T.metal, 0x8a8f94, 0.45, 1, { metalness: 0.75 }); S('rail', T.metal, 0x3d4246, 0.55, 1, { metalness: 0.7 });
+  S('rust', T.metal, 0x7a5236, 0.85, 1.4, { metalness: 0.3, bump: 1 }); S('car', T.metal, 0x35454f, 0.4, 2, { metalness: 0.6 }); S('car2', T.metal, 0x5a2f2c, 0.4, 2, { metalness: 0.6 });
   S('white', null, 0xb9bbb6, 0.3); S('fridge', null, 0x9aa3a3, 0.35, 1, { metalness: 0.3 });
   S('black', null, 0x0b0c0e, 0.35, 1, { metalness: 0.4 }); S('mirror', null, 0x566068, 0.08, 1, { metalness: 1 });
+  M.glass = new THREE.MeshStandardMaterial({ color: 0x35584a, roughness: 0.08, metalness: 0.3, transparent: true, opacity: 0.7 });
+  M.lampglass = new THREE.MeshBasicMaterial({ color: 0x6a5a40 });
   M.wax = new THREE.MeshStandardMaterial({ color: 0xd8cfb8, roughness: 0.6, emissive: 0x3a2a12 });
   return M;
 }
