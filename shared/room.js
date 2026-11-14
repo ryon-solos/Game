@@ -738,7 +738,7 @@ export class Room {
     const list = flat.stair ? (flat.entryG ? [W.brk[flat.entryG]] : []) : (flat.gs || []).map((g) => W.brk[g]);
     const y = flat.y0 + (flat.roof && !flat.stair ? 0.6 : 1.6);
     if (!flat.stair) flat.destroyed = true;
-    if (!this.breakMany(list, 'smash', flat.cx, y, op.z, 0, 0.3, flat.side, { big: 1 }))
+    if (!this.breakMany(list, 'smash', flat.cx, y, op.z, 0, 0.3, flat.side, { big: 1, f: flat.stair ? -1 : flat.id }))
       this.bc({ t: 'brk', gs: [], k: 'smash', big: 1, x: r2(flat.cx), y: r2(y), z: r2(op.z), d: [0, 0.3, flat.side] });
     for (const p of this.players.values()) {
       if (!p.alive || p.zone !== flat.key) continue;

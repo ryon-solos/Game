@@ -56,7 +56,8 @@ export class MinionView {
     this.eyes = [];
     for (let i = 0; i < 7; i++) { const a = (i / 7) * Math.PI * 2; const e = add(body, S.ball, S.eye, Math.cos(a) * 0.2, 0.02 + Math.sin(a) * 0.15, -0.84 - Math.abs(Math.sin(a)) * 0.03, 0.028 + (i % 3) * 0.012); e.castShadow = false; this.eyes.push(e); }
     this.feelers = [1, -1].map((sgn) => { const p = new THREE.Group(); p.position.set(sgn * 0.1, 0.16, -0.8); body.add(p); const f = add(p, S.claw, S.skin, 0, 0, -0.55, 0.018, 1.1, 0.018); f.rotation.x = -Math.PI / 2; return { p, sgn }; });
-    this.glow = new THREE.PointLight(0x9cffb0, 1.2, 5, 1.5); this.glow.position.set(0, 0.2, -1.1); body.add(this.glow);
+    // (no real light on these: adding or removing a light makes the renderer recompile every material)
+    this.glow = add(body, S.ball, S.eye, 0, 0.2, -1.0, 0.001); this.glow.castShadow = false;
     // six legs
     this.legs = [];
     for (let i = 0; i < 6; i++) {
@@ -86,8 +87,7 @@ export class MinionView {
     this.body.rotation.set(Math.sin(t * 2.1) * 0.05 + (this.chase ? -0.18 : 0), this.yaw, Math.sin(t * 7) * 0.04 * Math.min(1, speed));
     this.body.scale.setScalar(sc);
     const hot = !!this.chase;
-    if (hot !== this.hot) { this.hot = hot; for (const e of this.eyes) e.material = hot ? this.S.eyeHot : this.S.eye; this.glow.color.setHex(hot ? 0xff4030 : 0x9cffb0); }
-    this.glow.intensity = (hot ? 3 : 1.2) * this.grow;
+    if (hot !== this.hot) { this.hot = hot; for (const e of this.eyes) e.material = hot ? this.S.eyeHot : this.S.eye; }
     const open = hot ? 0.7 + Math.sin(t * 16) * 0.3 : 0.15 + Math.max(0, Math.sin(t * 2.2)) * 0.2;
     for (const m of this.mand) m.p.rotation.y = m.sgn * open;
     this.maw.scale.x = 0.06 + open * 0.14;

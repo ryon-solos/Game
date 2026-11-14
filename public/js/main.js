@@ -100,7 +100,7 @@ const hud = {
     else { t.textContent = s.tl > 0 ? fmt(s.tl) : 'IT KNOWS'; t.classList.toggle('late', s.tl < 45); }
     $('hHp').style.width = s.hp + '%'; $('hHpN').textContent = Math.round(s.hp);
     $('hSt').style.width = s.stamina + '%'; $('hSt').parentElement.classList.toggle('tired', !!s.tired);
-    $('hAmmo').textContent = (s.ammo > 0 ? `FLARE PISTOL  ${'▮'.repeat(s.ammo)}` : '') + (s.torch ? '   TORCH ON' : '');
+    $('hAmmo').textContent = [s.bottles > 0 ? `BOTTLES ${'◆'.repeat(s.bottles)} (G)` : '', s.ammo > 0 ? `FLARE PISTOL ${'▮'.repeat(s.ammo)}` : '', s.torch ? 'TORCH ON' : ''].filter(Boolean).join('    ');
     const z = $('hZone'); z.textContent = s.alive ? s.zone + (s.hidden ? '  ·  HIDDEN IN CLOSET' : s.crouch ? '  ·  crouched' : '') : '—'; z.classList.toggle('out', s.alive && !s.indoors && !s.hidden);
     $('hMin').textContent = s.minions ? `CRAWLERS LOOSE: ${s.minions}` : '';
     const e = $('hExpo'); e.style.width = Math.round(s.expo * 100) + '%'; e.classList.toggle('hot', s.expo > 0.75);
@@ -122,8 +122,13 @@ function ensureGame() {
   if (game) game.destroy();
   builtQuality = settings.quality;
   game = new Game({ canvas: $('game'), settings, sound, hud });
+  game.seedWanted = dailySeed();
   window.__game = game;
   return game;
+}
+// the menus sit on top of the live street, with the thing walking it
+function backdrop() {
+  try { ensureGame().startAttract(lobby ? lobby.seed : dailySeed()); document.body.classList.add('menu'); } catch (e) { console.error('backdrop failed', e); }
 }
 
 function onMsg(m) {
@@ -133,7 +138,7 @@ function onMsg(m) {
     case 'err': error(m.msg); break;
     case 'lobby':
       lobby = m;
-      if (game) { game.seedWanted = m.seed; game.phase = 'idle'; game.monster.setVisible(false); }
+      if (game) { game.seedWanted = m.seed; if (game.phase !== 'idle' || !game.attract) game.startAttract(m.seed); }
       if (mode === 'multi') { renderLobby(); if (document.pointerLockElement) document.exitPointerLock(); show('lobby'); }
       break;
     default:
@@ -143,8 +148,9 @@ function onMsg(m) {
 }
 
 function leaveGame() {
+  if (game && builtQuality !== settings.quality) setTimeout(backdrop, 30);
   if (net) { if (!net.solo) net.send({ t: 'leave' }); if (net.solo) { net.close(); net = null; } }
-  if (game) { game.phase = 'idle'; game.snap = null; game.monster.setVisible(false); }
+  if (game) game.startAttract();
   if (document.pointerLockElement) document.exitPointerLock();
   lobby = null;
   overlay('pause', false); overlay('over', false);
@@ -248,7 +254,10 @@ function bindSettings() {
   for (const k of ['invertY', 'headBob']) { const c = $('s_' + k); c.checked = settings[k]; c.addEventListener('change', () => { settings[k] = c.checked; save(); }); }
   const q = $('s_quality');
   for (const b of q.children) b.classList.toggle('on', b.dataset.v === settings.quality);
-  q.addEventListener('pick', (e) => { settings.quality = e.detail; save(); $('qualityNote').textContent = game && builtQuality !== settings.quality ? 'Graphics quality changes apply when the next game starts.' : ''; });
+  const NOTES = { low: 'Low: for weak laptops. Flat lighting, no reflections, plain shapes, small textures.', medium: 'Medium: bloom, anti-aliasing, reflections, surface relief, one shadow-casting lamp near you.', high: 'High: needs a real graphics card. Ambient occlusion, sharp textures, torch and lamp shadows, the most rubble.' };
+  const note = () => { $('qualityNote').textContent = NOTES[settings.quality] + (screen === 'game' && builtQuality !== settings.quality ? ' Applies when you return to the menu.' : ''); };
+  note();
+  q.addEventListener('pick', (e) => { settings.quality = e.detail; save(); note(); if (screen !== 'game' && game && builtQuality !== settings.quality) setTimeout(backdrop, 30); });
   function save() { store.set('tls.settings', settings); applySound(); if (game) game.applySettings(); }
 }
 bindSettings();
@@ -290,4 +299,6 @@ setChar(profile.char);
 const d = new Date();
 $('daily').textContent = `Today's street: ${d.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}. The layout changes every day.`;
 show('home');
+// build the street behind the menu once the page has painted
+setTimeout(() => { backdrop(); $('loading').classList.add('gone'); }, 60);
 window.addEventListener('error', (e) => console.error('ERR', e.message));
