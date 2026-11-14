@@ -4,7 +4,7 @@ import * as THREE from 'three';
 
 let Q = 1;
 // a canvas drawn in `s` logical units, backed by s*Q real pixels
-function cv(s = 512) { const c = document.createElement('canvas'); c.width = c.height = Math.round(s * Q); const x = c.getContext('2d'); x.scale(Q, Q); return [c, x]; }
+function cv(s = 512) { const c = document.createElement('canvas'); c.width = c.height = Math.round(s * Q); const x = c.getContext('2d', { willReadFrequently: true }); x.scale(Q, Q); return [c, x]; }
 let seed = 1337;
 const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
 const rr = (a, b) => a + rnd() * (b - a);
@@ -38,6 +38,31 @@ function drips(ctx, s, n, col) {
 function cracks(ctx, s, n, col, w = 1.2, step = 34) {
   ctx.strokeStyle = col; ctx.lineWidth = w;
   for (let i = 0; i < n; i++) { let px = rr(0, s), py = rr(0, s); ctx.beginPath(); ctx.moveTo(px, py); for (let k = 0; k < 10; k++) { px += rr(-step, step); py += rr(-step, step); ctx.lineTo(px, py); } ctx.stroke(); }
+}
+// A tangent-space normal map from a height (or, failing that, the brightness of the colour map): Sobel slopes,
+// wrapped at the edges so it tiles. Real per-pixel normals light far better than screen-space bump mapping.
+const NORM = new WeakMap();
+function normalTex(img, strength, aniso) {
+  const w = img.width, h = img.height, src = img.getContext('2d').getImageData(0, 0, w, h).data;
+  const H = new Float32Array(w * h);
+  for (let i = 0, j = 0; i < H.length; i++, j += 4) H[i] = (src[j] * 0.299 + src[j + 1] * 0.587 + src[j + 2] * 0.114) / 255;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d'), out = x.createImageData(w, h), d = out.data, k = strength * (w / 512);
+  for (let y = 0; y < h; y++) {
+    const ym = ((y - 1 + h) % h) * w, y0 = y * w, yp = ((y + 1) % h) * w;
+    for (let xx = 0; xx < w; xx++) {
+      const xm = (xx - 1 + w) % w, xp = (xx + 1) % w;
+      const gx = (H[ym + xp] + 2 * H[y0 + xp] + H[yp + xp]) - (H[ym + xm] + 2 * H[y0 + xm] + H[yp + xm]);
+      const gy = (H[yp + xm] + 2 * H[yp + xx] + H[yp + xp]) - (H[ym + xm] + 2 * H[ym + xx] + H[ym + xp]);
+      let nx = -gx * k, ny = gy * k, nz = 1;
+      const l = 1 / Math.hypot(nx, ny, nz); nx *= l; ny *= l; nz *= l;
+      const o = (y0 + xx) * 4;
+      d[o] = (nx * 0.5 + 0.5) * 255; d[o + 1] = (ny * 0.5 + 0.5) * 255; d[o + 2] = (nz * 0.5 + 0.5) * 255; d[o + 3] = 255;
+    }
+  }
+  x.putImageData(out, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = aniso;
+  return t;
 }
 function tex(c, aniso, srgb = true) {
   const t = new THREE.CanvasTexture(c);
@@ -234,6 +259,12 @@ export function makeTextures(q = {}) {
     const w = x.createRadialGradient(190, 66, 0, 190, 66, 40); w.addColorStop(0, 'rgba(255,150,70,0.5)'); w.addColorStop(1, 'rgba(255,120,50,0)'); x.fillStyle = w; x.fillRect(0, 0, 256, 128);
     const t = new THREE.CanvasTexture(c); t.mapping = THREE.EquirectangularReflectionMapping; t.colorSpace = THREE.SRGBColorSpace; T.sky = t;
   }
+  if (q.normal) {   // normal maps for every tiling surface (brick from its real height map)
+    const bn = normalTex(T.brickH.image, 3.2, aniso); NORM.set(T.brick, bn); NORM.set(T.brickH, bn); T.brickN = bn;
+    for (const [k, st] of [['stucco', 2.2], ['panel', 1.6], ['stone', 2.4], ['concrete', 1.6], ['asphalt', 1.8], ['planks', 1.6], ['plaster', 1.4], ['paper', 0.8], ['stripe', 0.8], ['wood', 1.2], ['tile', 2], ['lino', 0.8], ['carpet', 1.4], ['fabric', 1.2], ['metal', 0.8], ['card', 0.8]]) {
+      if (T[k]) { const n = normalTex(T[k].image, st, aniso); NORM.set(T[k], n); T[k + 'N'] = n; }
+    }
+  }
   return T;
 }
 
@@ -273,7 +304,11 @@ export function textTexture(text, kind, color = 0xffffff) {
 
 // Standard material whose textures are mapped in world space (boxes of any size share one material).
 function ws(params, metres) {
-  if (params.map && params.bump) { params.bumpMap = params.bumpMap || params.map; params.bumpScale = params.bump; }
+  if (params.map && params.bump) {
+    const src = params.bumpMap || params.map, n = NORM.get(src);
+    if (n) { params.normalMap = n; params.normalScale = new THREE.Vector2(1, 1).multiplyScalar(Math.min(1.6, Math.max(0.25, params.bump * 0.32))); delete params.bumpMap; }
+    else { params.bumpMap = src; params.bumpScale = params.bump; }
+  }
   delete params.bump;
   for (const k of Object.keys(params)) if (params[k] === undefined) delete params[k];
   const m = new THREE.MeshStandardMaterial(params);
@@ -294,6 +329,9 @@ function ws(params, metres) {
         vMapUv = wuv * ${sc};
         #ifdef USE_BUMPMAP
           vBumpMapUv = vMapUv;
+        #endif
+        #ifdef USE_NORMALMAP
+          vNormalMapUv = vMapUv;
         #endif
         #ifdef USE_ROUGHNESSMAP
           vRoughnessMapUv = wuv * 0.09;

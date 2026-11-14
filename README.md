@@ -29,7 +29,7 @@ Windows do the same thing.) Other commands:
 | `npm start` | Run the game without updating |
 | `npm run dev` | Run it and restart the server whenever server code changes (browser code only needs a page refresh) |
 | `npm run update` | Only pull the latest code and install dependencies |
-| `npm test` | Headless simulation and physics checks |
+| `npm test` | Headless simulation, physics and crawler checks |
 | `PORT=4000 npm start` | Use another port |
 
 ### Playing with friends from your computer
@@ -95,7 +95,7 @@ address in).
 | Closets | Open with `E`, step in, press `E` to shut it. A hand that is only feeling around passes over a closed closet; one that knows you are there opens it. |
 | Presence | 30 seconds in the same zone (closet or not) and the monster knows exactly where you are. |
 | Speed | The monster roams slowly, hurries to a sound (x1.7) and, when it has seen you or knows where you are, drops onto all ten limbs and runs (x1.9). |
-| Crawlers | From night 3 the monster summons them into the buildings: at half the star quota, after being stunned, and periodically. They hunt stairwells and flats for about a minute, bite (30+ damage), shriek your position to the street, and sometimes pull closets open. 1 on nights 3-4, 2 on nights 5-7, 3 on nights 8-10. |
+| Crawlers | From night 3 the monster summons them into the buildings: at half the star quota, after being stunned, and periodically. They hunt stairwells and flats for about a minute, bite (30+ damage), shriek your position to the street, and nose at a shut closet with someone inside, pulling it open about half the time. 1 on nights 3-4, 2 on nights 5-7, 3 on nights 8-10. |
 | Flare pistols | Spawn in new places every night. A hit stuns the monster; it wakes up knowing where the shot came from. |
 | Health | Lost to falls, debris and crawler bites. Restored by bandages and by being indoors at dawn. |
 
@@ -110,11 +110,36 @@ when you look back, and a torch that gutters when it is close.
 
 | | Meant for | What it turns on |
 |---|---|---|
-| Low | weak laptops, integrated graphics | 75% resolution, small textures, one moon shadow, 5 live lights, flat-edged geometry, interiors drawn only close by (about 0.4 million triangles and 900 draw calls a frame) |
-| Medium | an ordinary PC | full resolution, bump-mapped materials, chamfered edges, bloom, anti-aliasing, reflections, one shadow-casting lamp (about 2 million triangles a frame) |
-| High | a real graphics card | 1.5x resolution, 4K moon shadow, ambient occlusion, torch and lamp shadows, 12 live lights, large textures (about 6.5 million triangles a frame) |
+| Low | weak laptops, integrated graphics | 75% resolution, small textures, flat surfaces, a 1024 moon shadow round the player, 4 live lights, flat-edged geometry, interiors drawn only close by |
+| Medium | an ordinary PC | full resolution, normal-mapped surfaces, a 2048 moon shadow round the player, bloom, anti-aliasing, reflections, sharpening, one shadow-casting lamp |
+| High | a real graphics card | large textures with 16x anisotropic filtering, half-resolution ambient occlusion, torch shadows, stronger sharpening, the most rubble; supersamples up to 1.3x when there is headroom |
+
+Every tier uses **dynamic resolution**: once a second it checks the frame rate, drops the render scale when it
+falls under about 50 fps and creeps back up when there is room, so the game holds its frame rate instead of
+lagging. Turn on **Show FPS** in Settings to see the frame rate and current render scale. All tiers share an
+exponential height fog (thick in the street, thinning towards the roofs, drifting in slow banks), and the moon's
+shadow map follows the player instead of covering the whole street, which makes shadows several times sharper
+for the same cost. Shaders are compiled while the menu loads, so nothing hitches the first time it comes into view.
 
 The game starts on Medium; change it under Settings. From the menu the street is rebuilt at once; changed mid-game, it applies when you return to the menu.
+
+### Sound
+
+Everything is synthesised in the browser with WebAudio; there are no sound files.
+
+- **3D sound:** effects are placed round you with HRTF panning (you can tell front from behind), muffled when a
+  wall is between you and them, and sent to the reverb of the space they happen in: the long street, with its
+  slap echo between the facades, or a small room.
+- **Your body:** breathing that follows how winded and how scared you are (near silent at rest, ragged panting
+  after a sprint, held and shaking when you hide with it close), and a heartbeat that speeds up and gets louder
+  with fear, exertion and low health.
+- **The monster:** a breathing growl that follows where it is, footfalls you feel, and roars from a synthesised
+  throat. It **talks**: short lines that fit what just happened ("You will taste delicious.", "I can hear your
+  heart.", "Thief."), spoken by the browser's speech voice pitched right down, with the monster's throat under
+  every word. Lines are always subtitled; switch the voice off under Settings > Monster voice. (If your browser or
+  system has no speech voices installed you get the subtitles and the growl only.)
+- **Ambience:** wind and gusts (muffled indoors), a low drone, a tension pad that swells as it gets close, and
+  things in the dark: dripping water, metal groaning, distant thunder, a far-off wail, a music box, whispering.
 
 ### Decisions on the spec's open questions
 
@@ -142,8 +167,8 @@ public/config.js     address of the multiplayer server for static hosting
 shared/world.js      deterministic street generator (runs on server and client)
 shared/room.js       authoritative game simulation and monster AI
 public/js/game.js    rendering, input, local player
-public/js/*.js       world meshes and breakage, rubble physics, monster, crawlers, avatars, audio, post-processing, menus
-test/                headless tests
+public/js/*.js       world meshes and breakage, rubble physics, monster, crawlers, avatars, audio, the monster's lines, post-processing, menus
+test/                headless tests (simulation, physics, crawler renderer)
 ```
 
 All textures and sounds are generated in code; there are no asset downloads.

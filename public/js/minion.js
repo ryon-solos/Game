@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 
 const UP = new THREE.Vector3(0, 1, 0);
-const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3();
+const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _root = new THREE.Vector3(), _pole = new THREE.Vector3(), _knee = new THREE.Vector3();
 function span(mesh, a, b, r) {
   _a.subVectors(b, a);
   const len = _a.length() || 1e-4;
@@ -21,9 +21,9 @@ function ik(root, tip, l1, l2, pole, out) {
 
 let shared = null;
 function assets(T) {
-  if (shared) return shared;
-  shared = {
-    skin: new THREE.MeshStandardMaterial({ map: T.flesh, bumpMap: T.flesh, bumpScale: 2, color: 0x7a6a66, roughness: 0.35, metalness: 0.1 }),
+  if (shared && shared.T === T) return shared;     // (a new graphics tier brings new textures)
+  shared = { T,
+    skin: new THREE.MeshStandardMaterial({ map: T.flesh || null, bumpMap: T.flesh || null, bumpScale: 2, color: 0x7a6a66, roughness: 0.35, metalness: 0.1 }),
     bone: new THREE.MeshStandardMaterial({ color: 0xb5ae96, roughness: 0.5 }),
     eye: new THREE.MeshBasicMaterial({ color: 0xd8ffd0 }),
     eyeHot: new THREE.MeshBasicMaterial({ color: 0xff3020 }),
@@ -57,7 +57,6 @@ export class MinionView {
     for (let i = 0; i < 7; i++) { const a = (i / 7) * Math.PI * 2; const e = add(body, S.ball, S.eye, Math.cos(a) * 0.2, 0.02 + Math.sin(a) * 0.15, -0.84 - Math.abs(Math.sin(a)) * 0.03, 0.028 + (i % 3) * 0.012); e.castShadow = false; this.eyes.push(e); }
     this.feelers = [1, -1].map((sgn) => { const p = new THREE.Group(); p.position.set(sgn * 0.1, 0.16, -0.8); body.add(p); const f = add(p, S.claw, S.skin, 0, 0, -0.55, 0.018, 1.1, 0.018); f.rotation.x = -Math.PI / 2; return { p, sgn }; });
     // (no real light on these: adding or removing a light makes the renderer recompile every material)
-    this.glow = add(body, S.ball, S.eye, 0, 0.2, -1.0, 0.001); this.glow.castShadow = false;
     // six legs
     this.legs = [];
     for (let i = 0; i < 6; i++) {
@@ -101,26 +100,25 @@ export class MinionView {
       if (!L.init) { L.pos.set(hx, this.y, hz); L.init = true; }
       if (L.t >= 1) {
         // alternating tripod gait
-        const group = (i + L.row) % 2, phase = Math.sin(t * 0) + group;
+        const group = (i + L.row) % 2;
         const dist = Math.hypot(hx - L.pos.x, hz - L.pos.z);
         const partnerMoving = this.legs.some((o, j) => j !== i && (j + o.row) % 2 !== group && o.t < 1);
         if ((dist > stride && !partnerMoving) || dist > stride * 2.2 || Math.abs(L.pos.y - this.y) > 0.6) {
           L.from.copy(L.pos); L.to.set(hx + (this.x - px) / Math.max(dt, 1e-3) * 0.12, this.y, hz + (this.z - pz) / Math.max(dt, 1e-3) * 0.12); L.t = 0;
-          void phase;
         }
       } else {
         L.t = Math.min(1, L.t + dt * (7 + speed * 1.2));
         L.pos.lerpVectors(L.from, L.to, L.t); L.pos.y += Math.sin(L.t * Math.PI) * 0.3 * sc;
         if (L.t >= 1 && this.onStep) this.onStep(L.pos.x, L.pos.y, L.pos.z);
       }
-      const root = _a.set(this.x + fx * (1 - L.row) * 0.35 * sc + rx * L.side * 0.35 * sc, this.y + lift, this.z + fz * (1 - L.row) * 0.35 * sc + rz * L.side * 0.35 * sc).clone();
-      const pole = new THREE.Vector3(rx * L.side * 0.4, 1, rz * L.side * 0.4);
-      const knee = ik(root, L.pos, 1.0 * sc, 1.15 * sc, pole, new THREE.Vector3());
+      const root = _root.set(this.x + fx * (1 - L.row) * 0.35 * sc + rx * L.side * 0.35 * sc, this.y + lift, this.z + fz * (1 - L.row) * 0.35 * sc + rz * L.side * 0.35 * sc);
+      const pole = _pole.set(rx * L.side * 0.4, 1, rz * L.side * 0.4);
+      const knee = ik(root, L.pos, 1.0 * sc, 1.15 * sc, pole, _knee);
       span(L.a, root, knee, 0.07 * sc); span(L.b, knee, L.pos, 0.055 * sc);
       L.k.position.copy(knee); L.k.scale.setScalar(0.085 * sc);
       L.c.position.copy(knee).y += 0.12 * sc; L.c.scale.set(0.04 * sc, 0.28 * sc, 0.04 * sc);
     }
-    return this.dying && this.grow <= 0;
+    return !!this.dying && this.grow <= 0;
   }
 
   dispose() { this.scene.remove(this.group); }

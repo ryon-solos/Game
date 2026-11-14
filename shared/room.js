@@ -232,7 +232,7 @@ export class Room {
     this.m = {
       x: mx, z: 0, dir: mx > sp.x ? -1 : 1, patrol: mx > sp.x ? -1 : 1, h: cfg.h, st: 'listen', t: 0, wait: 5, tx: mx, think: 0,
       stims: [], goal: null, huntId: null, huntForce: 0, stunT: 0, immune: 0, smashCd: 20 + R() * 20,
-      hands: Array.from({ length: 8 }, (_, i) => ({ i, side: i < 4 ? 1 : -1, x: mx, y: 3, z: 0, task: null })),
+      hands: Array.from({ length: 8 }, (_, i) => ({ i, side: i < 4 ? 1 : -1, x: mx, y: 3, z: 0, task: null, home: true })),
       searchStart: 0, feinted: false, lastFx: 0,
     };
     this.bc({
@@ -612,8 +612,11 @@ export class Room {
   retractAll(only) {
     for (const h of this.m.hands) if (h.task && h.task.type !== 'eat' && h.task.type !== 'retract' && (!only || h.task.type === only)) h.task = this.retractTask(h);
   }
+  // send a hand out. One that is folded at the shoulder starts from there; one that is already out
+  // (a chasing hand following someone in through a door) carries on from where it is instead of snapping back
   launch(h) {
-    if (!h.task) { const s = shoulder(this.m, h.i); h.x = s.x; h.y = s.y - 1; h.z = s.z + h.side; }
+    if (!h.task && h.home !== false) { const s = shoulder(this.m, h.i); h.x = s.x; h.y = s.y - 1; h.z = s.z + h.side; }
+    h.home = false;
   }
 
   searchFlat(flat, aware, dur, near) {
@@ -705,7 +708,8 @@ export class Room {
     this.retractAll();
     const h = m.hands.find((q) => q.side === flat.side && q.i % 4 === 3 && (!q.task || q.task.type !== 'eat')) || m.hands[0];
     const op = flat.opens[0], y = flat.roof && !flat.stair ? flat.y0 + 0.5 : flat.y0 + 1.6;
-    const s = shoulder(m, h.i); h.x = s.x; h.y = s.y; h.z = s.z;
+    if (h.home !== false) { const s = shoulder(m, h.i); h.x = s.x; h.y = s.y; h.z = s.z; }
+    h.home = false;
     h.task = { type: 'smash', flat, ph: 0, hit: { x: flat.cx, y, z: op.z }, back: { x: flat.cx, y: y + 1.5, z: op.z - flat.side * 4.5 } };
     m.st = 'smash'; m.t = 0; m.goal = null;
     this.fx('windup', flat.cx, y, op.z);
@@ -923,7 +927,7 @@ export class Room {
       } else if (t.type === 'retract') {
         sp *= 1.8;
         if (t.path.length) { goal = t.path[0]; list = t.flat && t.flat.brk; force = true; if (at(goal, 0.6)) t.path.shift(); }
-        else if (at(sh, 0.8)) { h.task = null; h.via = null; continue; }
+        else if (at(sh, 0.8)) { h.task = null; h.via = null; h.home = true; continue; }
       }
       if (!h.task) { h.via = null; continue; }
       const k = h.task;
@@ -980,6 +984,16 @@ export class Room {
     });
     return best;
   }
+  // the node to head for to reach a player: one in the same room if there is one (the nearest node
+  // to someone standing against a wall is often on the far side of it, in the next room)
+  nodeNear(b, p) {
+    const f = p.zi && p.zi.kind === 'flat' ? p.zi.flat : null, ri = f ? this.roomIndex(f, p.x, p.z) : -1;
+    if (ri >= 0) {
+      const n = this.nearestNode(b, p.x, p.y, p.z, (q) => Math.abs(q.y - p.y) < 1.6 && this.roomIndex(f, q.x, q.z) === ri);
+      if (n >= 0) return n;
+    }
+    return this.nearestNode(b, p.x, p.y, p.z);
+  }
   roomIndex(flat, x, z) { return flat && flat.rooms ? flat.rooms.findIndex((r) => x >= r.x0 - 0.2 && x <= r.x1 + 0.2 && z >= r.z0 - 0.2 && z <= r.z1 + 0.2) : -1; }
 
   minionsTick(dt) {
@@ -993,14 +1007,14 @@ export class Room {
       if (q.wait > 0) { q.wait -= dt; continue; }
       const zi = zoneAt(W, q.x, q.y + 0.2, q.z), myRoom = this.roomIndex(zi.flat, q.x, q.z);
       // someone in the same room (or the same stairwell)?
-      let prey = null, pd = 7.5;
+      let prey = null, pd = 7.5, nose = null;
       for (const p of this.players.values()) {
         if (!p.alive || !p.zi || p.zi.key !== zi.key || zi.kind === 'street') continue;
         const d = Math.hypot(p.x - q.x, p.z - q.z);
         if (Math.abs(p.y - q.y) > 1.6 || d > pd) continue;
         if (zi.kind === 'flat' && this.roomIndex(zi.flat, p.x, p.z) !== myRoom && d > 1.5) continue;
-        if (p.hid) {   // it noses at closets; sometimes it pulls one open
-          if (d < 2.6 && !q.sniff.has(p.hid.id)) { q.sniff.add(p.hid.id); if (R() < 0.45) { this.setCloset(p.hid, true); this.fx('doorslam', p.hid.cx, p.hid.y + 1, p.hid.cz); } }
+        if (p.hid) {   // someone shut in a closet in this room: it goes and noses at the doors
+          if (!q.sniff.has(p.hid.id)) nose = p.hid;
           continue;
         }
         prey = p; pd = d;
@@ -1017,13 +1031,21 @@ export class Room {
           if (this.m) this.m.stims.push(this.stimAt(prey.x, prey.y, prey.z, 1.2, 0.9, prey));
         }
         if (pd < 0.8) sp = 0;
+      } else if (nose) {
+        // walk up to the closet doors; there, sometimes, it pulls them open
+        if (q.st !== 'nose') q.st = 'nose';
+        tx = nose.cx + nose.f[0] * 0.6; ty = nose.y; tz = nose.cz + nose.f[1] * 0.6; sp = 2.2 + 0.1 * cfg.n;
+        if (Math.hypot(tx - q.x, tz - q.z) < 0.45) {
+          q.sniff.add(nose.id); q.wait = 0.8;
+          if (R() < 0.45) { this.setCloset(nose, true); this.fx('doorslam', nose.cx, nose.y + 1, nose.cz); }
+        }
       } else {
-        if (q.st === 'chase') { q.st = 'roam'; q.node = this.nearestNode(b, q.x, q.y, q.z); q.path = [q.node]; }
+        if (q.st === 'chase' || q.st === 'nose') { q.st = 'roam'; q.node = this.nearestNode(b, q.x, q.y, q.z); q.path = [q.node]; }
         if (!q.path.length) {
           // pick somewhere to go: mostly towards anyone it can smell in this building
           const here = [...this.players.values()].filter((p) => p.alive && p.zi && p.zi.b === b && p.zi.kind !== 'street');
           let to;
-          if (here.length && R() < 0.75) { const p = here[(R() * here.length) | 0]; to = this.nearestNode(b, p.x, p.y, p.z); }
+          if (here.length && R() < 0.75) { const p = here[(R() * here.length) | 0]; to = this.nodeNear(b, p); }
           else do { to = (R() * b.nav.n.length) | 0; } while (b.nav.n[to].street);
           q.path = this.navPath(b, q.node, to);
           if (!q.path.length) { q.wait = 0.4; continue; }
@@ -1038,7 +1060,7 @@ export class Room {
         q.x += dx * k; q.y += dy * k; q.z += dz * k;
         q.ry = Math.atan2(-dx, -dz);
       }
-      if (!prey && d < 0.15) { q.node = q.path.shift(); if (!q.path.length && R() < 0.5) q.wait = 0.5 + R() * 1.5; }
+      if (!prey && !nose && d < 0.15) { q.node = q.path.shift(); if (!q.path.length && R() < 0.5) q.wait = 0.5 + R() * 1.5; }
     }
   }
 }

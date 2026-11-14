@@ -8,16 +8,61 @@ import { MonsterView } from './monster.js';
 import { MinionView } from './minion.js';
 import { Avatar, makeViewHands } from './avatar.js';
 import { Post, Debris, FX_LAYER } from './fx.js';
+import { Narrator } from './narration.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const _v = new THREE.Vector3(), _d = new THREE.Vector3();
 
 // Three tiers. Low is built for weak laptops, medium for ordinary PCs, high for a real graphics card.
+// The money goes on what you can see, not on raw pixel count: High no longer renders at 1.5x resolution
+// (four times the pixels on a high-DPI screen for a barely sharper picture, the main reason it lagged).
+// Instead every tier has dynamic resolution between dynMin and dynMax: it drops the render scale when the
+// frame rate falls below ~55 and creeps back up when there is headroom, so it holds its frame rate, and a
+// fast card on High gets supersampling for free. prCap limits the device pixel ratio (phones, retina).
+//  shadowRange: half-size (m) of the moon's shadow box, which now follows you: far sharper shadows from a smaller map
+//  normal: real normal maps made from the height of every texture, instead of screen-space bump
+//  aoHalf: ambient occlusion computed at half resolution
 export const QUALITY = {
-  low: { pr: 0.75, shadow: 1024, pshadow: 0, pshadowSize: 256, torchShadow: false, bloom: false, ao: false, smaa: false, env: false, tex: 0.5, aniso: 1, bump: false, round: 0, seg: 7, lights: 5, debris: 220, ash: 200, detail: 30, moonEvery: 4, pEvery: 4 },
-  medium: { pr: 1, shadow: 2048, pshadow: 1, pshadowSize: 512, torchShadow: false, bloom: true, ao: false, smaa: true, env: true, tex: 1, aniso: 4, bump: true, round: 1, seg: 10, lights: 8, debris: 500, ash: 500, detail: 52, moonEvery: 3, pEvery: 3 },
-  high: { pr: 1.5, shadow: 4096, pshadow: 2, pshadowSize: 1024, torchShadow: true, bloom: true, ao: true, smaa: true, env: true, tex: 2, aniso: 8, bump: true, round: 2, seg: 14, lights: 12, debris: 900, ash: 800, detail: 90, moonEvery: 2, pEvery: 3 },
+  low: { pr: 0.75, prCap: 1, dynMin: 0.55, dynMax: 1, shadow: 1024, shadowRange: 34, pshadow: 0, pshadowSize: 256, torchShadow: false, bloom: false, ao: false, smaa: false, env: false, tex: 0.5, aniso: 1, bump: false, normal: false, round: 0, seg: 7, lights: 4, debris: 220, ash: 160, detail: 30, moonEvery: 4, pEvery: 4, sharpen: 0 },
+  medium: { pr: 1, prCap: 1.5, dynMin: 0.6, dynMax: 1, shadow: 2048, shadowRange: 46, pshadow: 1, pshadowSize: 512, torchShadow: false, bloom: true, ao: false, smaa: true, env: true, tex: 1, aniso: 4, bump: true, normal: true, round: 1, seg: 10, lights: 6, debris: 500, ash: 400, detail: 52, moonEvery: 3, pEvery: 3, sharpen: 0.2 },
+  high: { pr: 1, prCap: 2, dynMin: 0.7, dynMax: 1.3, shadow: 2048, shadowRange: 52, pshadow: 1, pshadowSize: 1024, torchShadow: true, bloom: true, ao: true, aoHalf: true, smaa: true, env: true, tex: 2, aniso: 16, bump: true, normal: true, round: 2, seg: 14, lights: 8, debris: 800, ash: 700, detail: 90, moonEvery: 2, pEvery: 2, sharpen: 0.35 },
 };
+
+// Exponential height fog: thick down in the street, thinning towards the roofs, drifting in slow banks.
+// It replaces three's distance fog in every material. The scene's THREE.Fog carries it: colour, `near` is the
+// clock (for the drift) and `far` the density.
+THREE.ShaderChunk.fog_pars_vertex = '#ifdef USE_FOG\n varying float vFogDepth;\n varying vec3 vFogWorld;\n#endif';
+THREE.ShaderChunk.fog_vertex = '#ifdef USE_FOG\n vFogDepth = - mvPosition.z;\n vFogWorld = transpose(mat3(viewMatrix)) * (mvPosition.xyz - viewMatrix[3].xyz);\n#endif';
+THREE.ShaderChunk.fog_pars_fragment = `#ifdef USE_FOG
+  uniform vec3 fogColor;
+  varying float vFogDepth;
+  varying vec3 vFogWorld;
+  #ifdef FOG_EXP2
+    uniform float fogDensity;
+  #else
+    uniform float fogNear;
+    uniform float fogFar;
+  #endif
+#endif`;
+THREE.ShaderChunk.fog_fragment = `#ifdef USE_FOG
+  #ifdef FOG_EXP2
+    float fogT = 0.0, fogD = fogDensity;
+  #else
+    float fogT = fogNear, fogD = fogFar;
+  #endif
+  vec3 fogR = vFogWorld - cameraPosition;
+  float fogL = length(fogR);
+  float fogDy = fogR.y / max(fogL, 1e-4);
+  const float fogB = 0.085;                       // how fast it thins with height (1/m)
+  float fogK = fogDy * fogB;
+  float fogPath = abs(fogK) > 1e-4 ? (1.0 - exp(-fogL * fogK)) / fogK : fogL;
+  float fogAmt = fogD * exp(-max(cameraPosition.y, 0.0) * fogB) * fogPath;
+  vec2 fogP = vFogWorld.xz * 0.055 + vec2(fogT * 0.045, fogT * 0.018);
+  fogAmt *= 0.72 + 0.56 * (0.5 + 0.5 * sin(fogP.x * 1.7 + sin(fogP.y * 2.3 + fogT * 0.07)) * sin(fogP.y * 1.3 - fogP.x * 0.7));
+  float fogFactor = 1.0 - exp(-fogAmt * fogAmt * 0.9 - fogAmt * 0.12);
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, clamp(fogFactor, 0.0, 1.0));
+#endif`;
+const MOON_OFF = new THREE.Vector3(-40, 60, -34);   // from what it lights to the moon
 
 export class Game {
   constructor({ canvas, settings, sound, hud }) {
@@ -28,7 +73,7 @@ export class Game {
     r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.2;
     const scene = this.scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0b1820);
-    scene.fog = new THREE.FogExp2(0x0b1820, 0.024);
+    scene.fog = new THREE.Fog(0x0b1820, 0, 0.024);   // (near = clock, far = density: see the fog shader above)
     const cam = this.camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.06, 220);
     cam.rotation.order = 'YXZ'; cam.layers.enable(FX_LAYER); scene.add(cam);
 
@@ -47,9 +92,12 @@ export class Game {
     moon.position.set(20, 60, -34); moon.target.position.set(60, 0, 0); scene.add(moon, moon.target);
     if (q.shadow) {
       moon.castShadow = true; moon.shadow.mapSize.set(q.shadow, q.shadow);
-      const sc = moon.shadow.camera; sc.left = -75; sc.right = 75; sc.top = 40; sc.bottom = -40; sc.near = 1; sc.far = 160;
-      moon.shadow.bias = -0.0008; moon.shadow.normalBias = 0.06;
+      // a box round the player rather than round the whole street: the same map gives shadows several times sharper
+      const R = q.shadowRange, sc = moon.shadow.camera; sc.left = -R; sc.right = R; sc.top = R; sc.bottom = -R; sc.near = 1; sc.far = 220; sc.updateProjectionMatrix();
+      moon.shadow.bias = -0.0006; moon.shadow.normalBias = 0.04;
       moon.shadow.autoUpdate = false; moon.shadow.needsUpdate = true; this.moonN = 0;   // the street barely moves: redraw its shadow every few frames
+      const f = MOON_OFF.clone().negate().normalize(), right = new THREE.Vector3().crossVectors(f, new THREE.Vector3(0, 1, 0)).normalize();
+      this.moonAxes = { f, right, up: new THREE.Vector3().crossVectors(right, f), step: Math.max(1, Math.round(4 / (2 * R / q.shadow))) * (2 * R / q.shadow), at: new THREE.Vector3(1e9, 0, 0) };
     }
     const disc = new THREE.Mesh(new THREE.CircleGeometry(9, 32), new THREE.MeshBasicMaterial({ color: 0xcfe0f0, fog: false }));
     disc.position.set(-40, 120, -150); disc.lookAt(60, 0, 0); disc.layers.set(FX_LAYER); scene.add(disc);
@@ -84,10 +132,15 @@ export class Game {
     this.sendT = 0; this.hudT = 0; this.pickT = new Map(); this.prompt = null; this.spec = 0; this.time = 0;
     this.ray = new THREE.Raycaster();
     this.viewGun = null; this.thrown = []; this.hauntT = 30; this.ghost = null; this.attract = null;
+    // the thing talks: lines are spoken from its mouth, and subtitled
+    this.narr = new Narrator((text) => { const mp = this.monster.mouthPos; this.sound.speak(text, this.monster.group.visible ? { x: mp.x, y: mp.y, z: mp.z } : null); });
+    this.nightLineT = 0; this.prevMst = null; this.searchLineT = 0;
 
     // first-person arms: torch in the left hand, pistol in the right
     this.hands = makeViewHands(); cam.add(this.hands.group);
 
+    // dynamic resolution
+    this.dyn = { scale: 1, ceil: q.dynMax, acc: 0, n: 0, cool: 0, warm: 3, fps: 0 };
     this.bind();
     this.resize();
     this.last = performance.now(); this.running = true;
@@ -124,12 +177,52 @@ export class Game {
 
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
-    const pr = Math.min(2, Math.min(window.devicePixelRatio || 1, 2) * this.q.pr);
+    const pr = Math.max(0.35, Math.min(window.devicePixelRatio || 1, this.q.prCap) * this.q.pr * this.dyn.scale);
+    this.pr = pr;
     this.renderer.setPixelRatio(pr); this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h; this.camera.fov = this.set.fov; this.camera.updateProjectionMatrix();
     this.post.size(w, h, pr);
   }
   applySettings() { this.resize(); }
+
+  // Hold the frame rate: once a second, look at how fast frames came and nudge the render scale.
+  // After a drop it waits before trying higher again, and remembers the scale that was too much for a while.
+  dynRes(raw) {
+    const D = this.dyn, q = this.q;
+    if (D.warm > 0) { D.warm -= raw; return; }          // shaders compiling, the world being built: not representative
+    D.acc += raw; D.n++; D.cool -= raw;
+    if (D.acc < 1) return;
+    const fps = D.n / D.acc; D.fps = Math.round(fps); D.acc = 0; D.n = 0;
+    D.ceil = Math.min(q.dynMax, D.ceil + 0.01);
+    let s = D.scale;
+    if (fps < 50) { D.ceil = Math.max(q.dynMin, s - 0.02); s = Math.max(q.dynMin, s * (fps < 35 ? 0.8 : 0.9)); D.cool = 6; }
+    else if (fps > 58 && D.cool <= 0 && s < D.ceil) s = Math.min(D.ceil, s * 1.05);
+    if (Math.abs(s - D.scale) > 0.004) { D.scale = s; this.resize(); }
+  }
+
+  // The moon's shadow box follows you, moved in whole steps of its own texels so edges do not crawl.
+  followMoon(p) {
+    const A = this.moonAxes, m = this.moon;
+    const a = Math.round(p.dot(A.right) / A.step) * A.step, b = Math.round(p.dot(A.up) / A.step) * A.step, c = p.dot(A.f);
+    _v.copy(A.right).multiplyScalar(a).addScaledVector(A.up, b).addScaledVector(A.f, c);
+    if (_v.distanceToSquared(A.at) < 1e-6) return;
+    A.at.copy(_v);
+    m.target.position.copy(_v); m.position.copy(_v).addScaledVector(MOON_OFF, 1.4);
+    m.target.updateMatrixWorld(); m.updateMatrixWorld();
+    m.shadow.needsUpdate = true;
+  }
+
+  // Compile every shader the street needs now, while the menu is up, rather than in a hitch the first time
+  // something comes into view (the far stretches of street, the crawlers on night three).
+  prewarm() {
+    if (!this.world) return;
+    const det = this.world.detail.map((g) => g.visible);
+    for (const g of this.world.detail) g.visible = true;
+    const mv = new MinionView(this.scene, this.T);
+    try { this.renderer.compile(this.scene, this.camera); } catch (e) { console.warn('shader prewarm failed', e); }
+    mv.dispose();
+    this.world.detail.forEach((g, i) => { g.visible = det[i]; });
+  }
 
   // ------------------------------------------------------------------ messages from the simulation
   onMsg(m) {
@@ -139,6 +232,7 @@ export class Game {
       case 'pick': {
         const p = this.world && this.world.removePickup(m.id);
         if (p) this.sound.play(m.k === 'star' ? 'star' : 'pick', m.by === this.me ? 0.9 : 0.7, m.by === this.me ? null : { x: p.k.x, y: p.k.y, z: p.k.z, max: 30 });
+        if (m.by === this.me && m.k === 'star') this.narr.line('star', 0.45);
         if (m.by === this.me) this.hud.toast({ star: 'Star taken. It heard that. Move.', gun: 'Flare pistol: +2 rounds (left click)', med: 'Bandages: +35 health', bottle: 'Bottle. Throw it with G: it goes to the sound.' }[m.k], m.k);
         if (this.taking && this.taking.id === m.id) this.taking = null;
         return;
@@ -152,6 +246,7 @@ export class Game {
         this.sound.play('summon', 1); this.shake = Math.max(this.shake, 0.3);
         this.hud.alert(m.n > 1 ? 'IT HAS CALLED THEM IN' : 'IT HAS CALLED SOMETHING IN');
         this.hud.toast('Crawlers are loose in the buildings for a minute. Closets will not always save you.', 'bad');
+        this.narr.line('summon', 0.9, 4);
         return;
       case 'door': {
         const d = this.W.doors[m.id]; d.open = m.open; this.world.setDoor(m.id, m.open);
@@ -163,13 +258,16 @@ export class Game {
         this.hp = m.hp; this.hurtFx = 1; this.shake = Math.max(this.shake, 0.5); this.sound.play('hurt', 1);
         if (m.cause === 'debris') this.hud.toast('Hit by flying debris', 'bad');
         if (m.cause === 'minion') this.hud.toast('Bitten. Its shriek carries to the street.', 'bad');
+        if (m.hp < 45) this.narr.line('hurt', 0.4);
         return;
       case 'alert':
-        this.sound.play('alert', 1); this.hud.alert('IT KNOWS WHERE YOU ARE');
+        this.sound.play('alert', 1); this.sound.play('gasp', 0.9); this.hud.alert('IT KNOWS WHERE YOU ARE');
+        this.narr.line('reveal', 0.9, 5);
         return;
       case 'fx': {
         const max = { roar: 140, spot: 110, windup: 80, scratch: 26, reach: 30, doorslam: 30, screech: 45, bite: 25, mdie: 30, summon: 160, starcry: 60, bang: 60, lunge: 50, glass: 60 }[m.k] || 40;
-        if (m.k === 'glass' && m.by === this.me) return;          // we already heard our own bottle
+        if (m.k === 'glass' && m.by === this.me) { this.narr.line('bottle', 0.35); return; }          // we already heard our own bottle
+        if (m.k === 'spot' && this.alive && Math.hypot(m.x - this.camera.position.x, m.z - this.camera.position.z) < 45) this.narr.line('spot', 0.7, 6);
         this.sound.play(m.k, 1, { x: m.x, y: m.y, z: m.z, max });
         if (!this.debris) return;
         if (m.k === 'mdie') this.debris.puff(m.x, m.y, m.z, 1.6, 5, 1, 0x1a2a1c);
@@ -188,7 +286,7 @@ export class Game {
         this.sound.play('stun', 1, { x: this.monster.x, y: this.monster.h, z: this.monster.z, max: 140 });
         this.hud.toast(`The thing is stunned for ${Math.round(m.d)}s. Move.`, 'good');
         return;
-      case 'dawn': this.sound.play('dawn', 0.8); this.hud.toast('Enough stars. Dawn in 15 seconds. Get indoors.', 'good'); return;
+      case 'dawn': this.sound.play('dawn', 0.8); this.hud.toast('Enough stars. Dawn in 15 seconds. Get indoors.', 'good'); this.narr.line('dawn', 0.8, 3); return;
       case 'nightEnd': this.phase = 'inter'; return this.hud.nightEnd(m);
       case 'over': this.phase = 'over'; this.exitLock(); return this.hud.over(m);
       case 'left': { const a = this.avatars.get(m.id); if (a) { this.scene.remove(a.group); this.avatars.delete(m.id); } return; }
@@ -209,7 +307,8 @@ export class Game {
     this.debris = new Debris(this.scene, this.M.rubble, this.T.soft, this.world.col, this.q.debris, this.q.round ? this.world.roundGeo : null);
     this.player = new Player(this.world.col);
     this.viewGun = this.world.makeGun(); this.viewGun.scale.setScalar(0.62); this.viewGun.position.set(0, 0.03, -0.1); this.hands.right.add(this.viewGun);
-    if (this.ghost) { this.scene.remove(this.ghost.g); this.ghost = null; }
+    this.removeGhost();
+    this.prewarm(); this.dyn.warm = 3;
   }
 
   // The menu backdrop: the street, with the thing walking it.
@@ -221,6 +320,7 @@ export class Game {
     for (const v of this.minions.values()) v.dispose();
     this.minions.clear();
     this.world.setPickups([]);
+    this.sound.hush(); this.sound.setPaused(false);
     this.attract = { x: this.W.L * 0.7, dir: -1, st: 'roam', t: 0, wait: 0, shot: 0, shotT: 0, h: 14 };
     this.monster.reset(); this.monster.setVisible(true);
   }
@@ -254,6 +354,7 @@ export class Game {
     }
     this.monster.reset(); this.monster.setVisible(true);
     this.hauntT = 25 + Math.random() * 20;
+    this.narr.reset(); this.nightLineT = 5; this.prevMst = null;
     this.hud.night(m);
   }
 
@@ -261,7 +362,7 @@ export class Game {
     this.phase = m.ph; this.stars = m.stars; this.tl = m.tl; this.cd = m.cd;
     for (const p of m.p) {
       if (p[0] === this.me) {
-        if (this.alive) { this.hp = p[6]; this.ammo = p[8]; this.expo = p[9]; this.bottles = p[10] || 0; }
+        if (this.alive) { this.hp = p[6]; this.ammo = p[8]; this.expo = p[9]; this.bottles = Math.max(0, (p[10] || 0) - this.thrown.length); }
         continue;
       }
       const a = this.avatars.get(p[0]);
@@ -300,7 +401,7 @@ export class Game {
     if (m.id === this.me) {
       this.alive = false; this.hp = 0; this.shake = 2; this.torchOn = false; this.taking = null;
       this.sound.play('death', 1);
-      if (grabbed) { this.eaten = { h: m.h, t: 0 }; this.hud.grabbed(); }
+      if (grabbed) { this.eaten = { h: m.h, t: 0 }; this.hud.grabbed(); this.narr.line('grab'); }
       else { this.deadFx = 1; this.hud.dead(m.cause); }
     } else {
       const a = this.avatars.get(m.id);
@@ -320,7 +421,7 @@ export class Game {
     this.sound.play('eat', 1, m.id === this.me ? null : { x: mp.x, y: mp.y, z: mp.z, max: 120 });
     if (this.debris) this.debris.puff(mp.x, mp.y, mp.z, 1.6, 10, 1.6, 0x7a0606, 0.8);
     if (m.id === this.me) { this.eaten = null; this.deadFx = 1; this.hurtFx = 1; this.blackout = 1; this.hud.dead('hand'); }
-    else { const a = this.avatars.get(m.id); if (a) { a.carry = null; a.group.visible = false; } }
+    else { const a = this.avatars.get(m.id); if (a) { a.carry = null; a.group.visible = false; } if (this.alive) this.narr.line('ate', 0.8); }
   }
 
   // ------------------------------------------------------------------ actions
@@ -372,7 +473,10 @@ export class Game {
 
   // ------------------------------------------------------------------ frame
   frame(now) {
-    const dt = Math.max(0, Math.min(0.05, (now - this.last) / 1000)); this.last = now; this.time += dt;
+    const raw = Math.max(0, (now - this.last) / 1000);
+    const dt = Math.min(0.05, raw); this.last = now; this.time += dt;
+    if (raw < 1) this.dynRes(raw);           // (longer gaps are the tab being hidden, not the game being slow)
+    this.scene.fog.near = this.time;
     const cam = this.camera, set = this.set, snd = this.sound;
     const playing = this.world && (this.phase === 'night' || this.phase === 'dawn');
     if (this.world) {
@@ -395,7 +499,8 @@ export class Game {
           else if (e.t === 'land') {
             snd.play('land', clamp(e.v / 14, 0.2, 1));
             if (e.v > 6) this.noise(Math.min(25, e.v * 1.4));
-            if (e.v > 11.5) { const a = Math.round((e.v - 11.5) * 7); this.net.send({ t: 'hurt', a }); this.hp -= a; this.hurtFx = 1; this.shake = 1; snd.play('hurt', 1); this.hud.toast(`Fall damage  −${a}`, 'bad'); }
+            // (the simulation answers with an 'hp' message, which plays the hurt sound and flash: do not do it twice)
+            if (e.v > 11.5) { const a = Math.round((e.v - 11.5) * 7); this.shake = 1; this.hud.toast(`Fall damage  −${a}`, 'bad'); this.net.send({ t: 'hurt', a }); }
           }
         }
         // lean round corners (Q / R): the camera moves sideways, as far as the wall lets it
@@ -474,7 +579,8 @@ export class Game {
       // monster + crawlers
       if (this.snap) { this.monster.update(dt, this.snap.m, cam.position); this.updateMinions(dt, this.snap.mn || []); }
       cam.getWorldDirection(_d);
-      this.world.update(dt, cam.position, this.fear || 0, _d, zoneAt(this.W, cam.position.x, cam.position.y - 1.5, cam.position.z).indoors);
+      this.indoors = zoneAt(this.W, cam.position.x, cam.position.y - 1.5, cam.position.z).indoors;
+      this.world.update(dt, cam.position, this.fear || 0, _d, this.indoors);
       this.debris.update(dt, cam.position);
       this.updateGhost(dt);
     }
@@ -524,16 +630,43 @@ export class Game {
     // fear narrows the eye
     const fov = set.fov - this.fear * 4 + (this.player && this.player.sprinting && hv ? 5 : 0);
     if (Math.abs(cam.fov - fov) > 0.05) { cam.fov += (fov - cam.fov) * Math.min(1, dt * 5); cam.updateProjectionMatrix(); }
-    snd.listener.x = c.x; snd.listener.y = c.y; snd.listener.z = c.z; snd.listener.yaw = cam.rotation.y;
+    snd.listener.x = c.x; snd.listener.y = c.y; snd.listener.z = c.z; snd.listener.yaw = cam.rotation.y; snd.listener.indoors = this.indoors;
+    const mon = this.monster;
+    snd.monster = mon.group.visible && this.snap ? { x: mon.x, y: mon.h * 0.85, z: mon.z } : null;
+    if (snd.monster && !playing) md = Math.hypot(mon.x - c.x, mon.z - c.z);
+    const P2 = this.player;
+    snd.setBody({
+      alive: playing && this.alive && !this.attract, fear: this.fear, hp: this.hp,
+      exert: P2 ? clamp((100 - P2.stamina) / 85 + (P2.sprinting ? 0.25 : 0), 0, 1) : 0, tired: !!(P2 && P2.tired), crouch: !!(P2 && P2.crouch), still: !(P2 && P2.moving),
+    });
+    snd.setPaused(!!(this.net && this.net.solo && this.net.paused && playing));
     snd.update(dt, playing && this.alive ? this.fear : this.attract ? 0.25 : 0, playing || this.attract ? md : 999, playing && this.snap && this.snap.m.fast);
+    if (playing && this.alive && this.snap && !(this.net && this.net.paused)) this.narrate(dt, md);
 
-    if (this.q.shadow && (this.moonN = (this.moonN + 1) % this.q.moonEvery) === 0) this.moon.shadow.needsUpdate = true;
+    if (this.q.shadow) {
+      this.followMoon(cam.position);
+      if ((this.moonN = (this.moonN + 1) % this.q.moonEvery) === 0) this.moon.shadow.needsUpdate = true;
+    }
     this.blackout = Math.max(0, (this.blackout || 0) - dt * 0.5);
     this.renderer.toneMappingExposure = this.attract ? 2.7 : 1.2;   // the menu shows the street off; the game keeps it dark
     this.post.render(dt, { hurt: this.hurtFx, fear: this.fear, warp: this.warp, gamma: set.gamma * (this.attract ? 1.55 : 1) * (1 - this.blackout * 0.85), dead: this.alive || !playing || this.eaten ? 0 : 0.6 });
 
     this.hudT -= dt;
     if (this.hudT <= 0 && this.world && !this.attract) { this.hudT = 0.1; this.updateHud(); }
+  }
+
+  // what the thing says, unprompted: at the start of the night, when it wakes from a stun, while its hand is
+  // feeling through the room you are in, and now and then when it is near
+  narrate(dt, md) {
+    const m = this.snap.m, n = this.narr, c = this.camera.position;
+    if (this.nightLineT > 0 && (this.nightLineT -= dt) <= 0) n.line('night');
+    if (this.prevMst === 'stun' && m.st !== 'stun') n.line('wake', 0.85, 4);
+    this.prevMst = m.st;
+    this.searchLineT -= dt;
+    if (this.searchLineT <= 0 && m.st === 'search') {
+      for (const h of m.hands) if (h && Math.hypot(h[1] - c.x, h[2] - c.y, h[3] - c.z) < 7) { this.searchLineT = 6; n.line('search', 0.6, 10); break; }
+    }
+    n.update(dt, md < 50 && m.st !== 'stun' && m.st !== 'eat');
   }
 
   // ---- menu backdrop: a fake, slow patrol and a few fixed camera set-ups
@@ -593,6 +726,13 @@ export class Game {
     this.scene.add(g);
     this.ghost = { g, t: 0, looked: 0, seen: false };
   }
+  removeGhost() {
+    const gh = this.ghost;
+    if (!gh) return;
+    this.scene.remove(gh.g);
+    gh.g.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+    this.ghost = null;
+  }
   updateGhost(dt) {
     const gh = this.ghost;
     if (!gh) return;
@@ -601,7 +741,7 @@ export class Game {
     this.camera.getWorldDirection(_d);
     const inView = d > 0.1 && (dx * _d.x + dz * _d.z) / d > 0.82;
     if (inView) { gh.looked += dt; if (!gh.seen) { gh.seen = true; this.sound.play('sting', 0.9); } } else if (gh.seen) gh.looked += dt * 3;
-    if (gh.looked > 0.45 || d < 3 || gh.t > 30 || !this.alive) { this.scene.remove(gh.g); this.ghost = null; }
+    if (gh.looked > 0.45 || d < 3 || gh.t > 30 || !this.alive) this.removeGhost();
   }
 
   updateMinions(dt, list) {
@@ -628,8 +768,7 @@ export class Game {
     let tx, ty, tz, dist = 3.2;
     if (alive.length) { const a = alive[this.spec % alive.length]; tx = a.x; ty = a.y + 1.5; tz = a.z; this.specName = [...this.avatars.entries()].find((e) => e[1] === a)[0]; }
     else { tx = this.monster.x; ty = this.monster.h * 0.7; tz = this.monster.z; dist = 16; this.specName = null; }
-    const want = new THREE.Vector3(tx + Math.cos(t) * dist, ty + (alive.length ? 0.8 : 2), tz + Math.sin(t) * dist * (alive.length ? 0.5 : 0.4));
-    cam.position.lerp(want, Math.min(1, dt * 3));
+    cam.position.lerp(_v.set(tx + Math.cos(t) * dist, ty + (alive.length ? 0.8 : 2), tz + Math.sin(t) * dist * (alive.length ? 0.5 : 0.4)), Math.min(1, dt * 3));
     cam.lookAt(tx, ty, tz);
   }
 
@@ -679,14 +818,28 @@ export class Game {
       prompt: this.prompt ? this.prompt.text : null, progress: this.prompt && this.prompt.progress, hidden,
       minions: [...this.minions.values()].filter((v) => !v.dying).length,
       others, crouch: P && P.crouch, spec: !this.alive && this.specName ? this.names.get(this.specName) : null, fear: this.fear,
+      fps: this.set.showFps ? this.dyn.fps : 0, res: Math.round(this.dyn.scale * 100),
     });
   }
 
   destroy() {
     this.running = false;
     this.exitLock();
+    this.sound.hush();
     for (const f of this.unbind || []) f();
     if (this.world) this.world.dispose();
+    if (this.debris) this.debris.dispose();
+    this.removeGhost();
+    // free what lives on the graphics card: render targets, shadow maps, textures, the sky's light probe
+    this.post.dispose();
+    if (this.scene.environment) this.scene.environment.dispose();
+    for (const t of Object.values(this.T)) if (t && t.dispose) t.dispose();
+    for (const m of Object.values(this.M)) if (m && m.dispose) m.dispose();
+    this.scene.traverse((o) => { if (o.isLight && o.shadow && o.shadow.map) o.shadow.map.dispose(); });
+    // the next renderer gets this same WebGL context: hand it back with texture uploads unflipped, or the new
+    // renderer's placeholder 3D textures fail to upload
+    const gl = this.renderer.getContext();
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     this.renderer.dispose();
   }
 }
