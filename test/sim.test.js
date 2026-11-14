@@ -87,7 +87,7 @@ for (let n = 1; n <= 10; n++) { const c = nightCfg(n, 1); assert.ok(c.h > 0 && c
 // ---- closets, crawlers, eating
 {
   const msgs = [];
-  const room = new Room({ id: 'y', seed: 20261111, max: 4, send: (pid, m) => msgs.push(m) });
+  const room = new Room({ id: 'y', seed: 20261111, max: 4, jitter: 7, send: (pid, m) => msgs.push(m) });
   room.addPlayer('a', 'A', 'm'); room.handle('a', { t: 'start' });
   const W = room.W, p = room.players.get('a');
   const c = W.closets.find((q) => !W.flats[q.flat].roof && W.flats[q.flat].f === 1), flat = W.flats[c.flat];
@@ -113,7 +113,7 @@ for (let n = 1; n <= 10; n++) { const c = nightCfg(n, 1); assert.ok(c.h > 0 && c
 }
 {
   const msgs = [];
-  const room = new Room({ id: 'z', seed: 20261111, max: 4, send: (pid, m) => msgs.push(m) });
+  const room = new Room({ id: 'z', seed: 20261111, max: 4, jitter: 11, send: (pid, m) => msgs.push(m) });
   room.addPlayer('a', 'A', 'm'); room.handle('a', { t: 'start' });
   room.startNight(3);
   const p = room.players.get('a'), W = room.W;
@@ -134,6 +134,37 @@ for (let n = 1; n <= 10; n++) { const c = nightCfg(n, 1); assert.ok(c.h > 0 && c
   assert.ok(maxY > 6, 'crawler climbs the stairs'); assert.ok(hurt >= 1, 'crawler finds and bites the player');
   assert.strictEqual(room.minions.length, 0, 'crawlers expire after their minute');
   assert.ok(msgs.some((m) => m.t === 'fx' && m.k === 'mdie'));
+}
+
+// ---- crawlers and closets: a shut closet hides you from a crawler until it pulls the doors open
+{
+  const msgs = [];
+  const room = new Room({ id: 'zc', seed: 20261111, max: 4, jitter: 13, send: (pid, m) => msgs.push(m) });
+  room.addPlayer('a', 'A', 'm'); room.handle('a', { t: 'start' });
+  room.startNight(3);
+  const p = room.players.get('a'), W = room.W;
+  const c = W.closets.find((q) => !W.flats[q.flat].roof && W.flats[q.flat].f >= 1), b = W.buildings[W.flats[c.flat].b];
+  const put = () => room.handle('a', { t: 'st', x: c.cx, y: c.y + 0.05, z: c.cz, ry: 0, fl: 0 });
+  put(); room.tick(0.05);
+  assert.ok(p.hid === c, 'standing in the shut closet hides the player');
+  room.m.st = 'listen'; room.m.wait = 1e9;
+  room.time = 20; room.summon('test');
+  for (const q of room.minions) q.b = b;          // make sure it hunts this building
+  let bitWhileShut = false, opened = false;
+  for (let i = 0; i < 20 * 70; i++) {
+    if (p.alive) put();
+    const shut = !c.open;
+    p.expo = 0; p.hp = 100; room.m.stims = []; room.m.st = 'listen'; room.m.t = 0;
+    const before = msgs.length;
+    room.tick(0.05);
+    if (shut && msgs.slice(before).some((m) => m.t === 'hp' && m.cause === 'minion')) bitWhileShut = true;
+    if (c.open) opened = true;
+  }
+  assert.ok(!bitWhileShut, 'a crawler never bites through a shut closet');
+  assert.ok(opened, 'the crawler finds the closet and pulls it open (this seed)');
+  assert.ok(msgs.some((m) => m.t === 'hp' && m.cause === 'minion'), 'once the closet is open it bites');
+  assert.strictEqual(room.minions.length, 0, 'crawlers expire after their minute');
+  console.log('crawler+closet: bitten while shut', bitWhileShut, '· closet pulled open', opened);
 }
 
 // ---- patrol: with nobody making a sound it still walks its round of the whole street

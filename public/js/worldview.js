@@ -499,6 +499,13 @@ export class WorldView {
   dispose() {
     this.scene.remove(this.group);
     for (const p of this.pool) { this.scene.remove(p); if (p.shadow && p.shadow.map) p.shadow.map.dispose(); }
-    this.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+    // geometry, and every material made here (signs, decals, lamps, halos...): the shared surface materials stay
+    const shared = new Set(Object.values(this.M));
+    const mats = new Set();
+    this.group.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      for (const m of [].concat(o.material || [])) if (!shared.has(m)) mats.add(m);
+    });
+    for (const m of mats) m.dispose();
   }
 }

@@ -12,10 +12,10 @@ export const FX_LAYER = 1;   // sprites, light shafts, decals: drawn, but left o
 
 const VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }';
 const Grade = {
-  uniforms: { tDiffuse: { value: null }, time: { value: 0 }, hurt: { value: 0 }, fear: { value: 0 }, gamma: { value: 1 }, dead: { value: 0 }, aspect: { value: 1 }, warp: { value: 0 } },
+  uniforms: { tDiffuse: { value: null }, time: { value: 0 }, hurt: { value: 0 }, fear: { value: 0 }, gamma: { value: 1 }, dead: { value: 0 }, aspect: { value: 1 }, warp: { value: 0 }, sharpen: { value: 0 }, texel: { value: new THREE.Vector2(1 / 1024, 1 / 1024) } },
   vertexShader: VS,
   fragmentShader: `
-    uniform sampler2D tDiffuse; uniform float time, hurt, fear, gamma, dead, aspect, warp; varying vec2 vUv;
+    uniform sampler2D tDiffuse; uniform float time, hurt, fear, gamma, dead, aspect, warp, sharpen; uniform vec2 texel; varying vec2 vUv;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
     void main(){
       vec2 uv = vUv;
@@ -28,6 +28,16 @@ const Grade = {
       col.r = texture2D(tDiffuse, uv + dir * ca * 4.0).r;
       col.g = texture2D(tDiffuse, uv).g;
       col.b = texture2D(tDiffuse, uv - dir * ca * 4.0).b;
+      // contrast-adaptive sharpening: brings back texture detail lost to anti-aliasing and a scaled render,
+      // and backs off on edges that are already hard so it does not ring
+      if (sharpen > 0.0) {
+        vec3 n = texture2D(tDiffuse, uv + vec2(0.0, texel.y)).rgb, s = texture2D(tDiffuse, uv - vec2(0.0, texel.y)).rgb;
+        vec3 e = texture2D(tDiffuse, uv + vec2(texel.x, 0.0)).rgb, w = texture2D(tDiffuse, uv - vec2(texel.x, 0.0)).rgb;
+        vec3 mn = min(col, min(min(n, s), min(e, w))), mx = max(col, max(max(n, s), max(e, w)));
+        vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, 1e-4), 0.0, 1.0));
+        vec3 wt = -amp * sharpen * 0.2;
+        col = clamp((col + (n + s + e + w) * wt) / (1.0 + 4.0 * wt), 0.0, 1.0);
+      }
       // teal shadows / warm highlights, gentle filmic contrast
       float l = dot(col, vec3(0.299, 0.587, 0.114));
       vec3 shadow = vec3(0.84, 1.02, 1.12), high = vec3(1.08, 1.0, 0.9);
@@ -55,6 +65,8 @@ export class Post {
     if (q.ao) {
       try {
         const ao = this.ao = new GTAOPass(scene, camera, 256, 256);
+        // at half resolution: a quarter of the cost, and ambient occlusion is soft anyway
+        if (q.aoHalf) { const set = ao.setSize.bind(ao); ao.setSize = (w, h) => set(Math.max(1, Math.round(w / 2)), Math.max(1, Math.round(h / 2))); }
         ao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.4, thickness: 1.2, scale: 1.25, samples: 12, distanceFallOff: 1, screenSpaceRadius: false });
         ao.blendIntensity = 1;
         const render = ao.render.bind(ao);
@@ -75,9 +87,17 @@ export class Post {
     this.composer.addPass(new OutputPass());
     if (q.smaa) { try { this.smaa = new SMAAPass(256, 256); this.composer.addPass(this.smaa); } catch (e) { console.warn('SMAA unavailable', e); } }
     this.grade = new ShaderPass(Grade);          // graded in display space, after tone mapping
+    this.grade.uniforms.sharpen.value = q.sharpen || 0;
     this.composer.addPass(this.grade);
   }
-  size(w, h, pr) { this.composer.setPixelRatio(pr); this.composer.setSize(w, h); this.grade.uniforms.aspect.value = w / h; }
+  size(w, h, pr) {
+    this.composer.setPixelRatio(pr); this.composer.setSize(w, h);
+    this.grade.uniforms.aspect.value = w / h; this.grade.uniforms.texel.value.set(1 / Math.max(1, w * pr), 1 / Math.max(1, h * pr));
+  }
+  dispose() {
+    for (const p of this.composer.passes) if (p.dispose) p.dispose();
+    this.composer.dispose();
+  }
   render(dt, u) {
     const g = this.grade.uniforms;
     g.time.value += dt; g.hurt.value = u.hurt; g.fear.value = u.fear; g.gamma.value = u.gamma; g.dead.value = u.dead; g.warp.value = u.warp || 0;

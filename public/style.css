@@ -123,6 +123,9 @@ body.ingame #hud { display: block; }
 .toast { margin-top: 6px; padding: 6px 16px; background: rgba(4, 9, 11, .6); border-left: 2px solid var(--dim); letter-spacing: .08em; animation: toast 4s forwards; }
 .toast.star { border-color: var(--amber); color: var(--amber); } .toast.bad { border-color: var(--blood); color: #ff8a8a; } .toast.good, .toast.gun, .toast.med { border-color: #58d8ff; }
 @keyframes toast { 0% { opacity: 0; transform: translateY(-6px); } 8%, 80% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+#subs { position: absolute; left: 50%; bottom: 25%; transform: translateX(-50%); max-width: min(760px, 90vw); text-align: center; font-style: italic; font-size: clamp(17px, 2.1vw, 24px); letter-spacing: .06em; color: #e8b0a8; text-shadow: 0 0 18px rgba(160, 10, 10, .9), 0 2px 4px #000; opacity: 0; transition: opacity .6s; }
+#subs.show { opacity: 1; transition: opacity .25s; }
+#fps { position: absolute; right: 12px; top: 10px; font: 12px/1 ui-monospace, monospace; letter-spacing: .05em; color: #9fc; opacity: .75; }
 #specNote { position: absolute; left: 0; right: 0; bottom: 18%; text-align: center; letter-spacing: .14em; color: #ff9a9a; font-size: 18px; white-space: pre-line; }
 .loc { position: absolute; left: 22px; bottom: 22px; width: 330px; background: rgba(4, 9, 11, .55); border: 1px solid var(--line); border-left: 3px solid var(--blood); padding: 10px 14px; }
 #hZone { font-size: 16px; letter-spacing: .08em; margin-bottom: 8px; min-height: 20px; }

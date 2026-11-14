@@ -13,10 +13,17 @@ const store = {
 };
 
 // ------------------------------------------------------------------ settings + profile
-const settings = Object.assign({ sens: 1, fov: 78, master: 0.8, music: 0.7, sfx: 0.9, gamma: 1, quality: 'medium', invertY: false, headBob: true }, store.get('tls.settings', {}));
+const settings = Object.assign({ sens: 1, fov: 78, master: 0.8, music: 0.7, sfx: 0.9, gamma: 1, quality: 'medium', invertY: false, headBob: true, voice: true, showFps: false }, store.get('tls.settings', {}));
 const profile = Object.assign({ name: '', char: 'm' }, store.get('tls.profile', {}));
 const sound = new Sound();
-const applySound = () => { sound.vol = { master: settings.master, music: settings.music, sfx: settings.sfx }; sound.applyVol(); };
+const applySound = () => { sound.vol = { master: settings.master, music: settings.music, sfx: settings.sfx }; sound.voiceOn = settings.voice; sound.applyVol(); };
+// what the monster says is always subtitled (and still shown if the browser has no speech voice)
+let subT;
+sound.onSubtitle = (text) => {
+  if (screen !== 'game') return;
+  const el = $('subs'); el.textContent = text; el.classList.add('show');
+  clearTimeout(subT); subT = setTimeout(() => el.classList.remove('show'), 1400 + text.length * 70);
+};
 applySound();
 
 let game = null, net = null, me = null, lobby = null, mode = null, screen = 'home', builtQuality = null;
@@ -52,6 +59,10 @@ function banner(title, sub, hold) {
   if (!hold) bannerT = setTimeout(() => b.classList.remove('show'), 4600);
 }
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+// the HUD is refreshed ten times a second: only touch the page when a value really changed
+const last = new Map();
+const put = (id, prop, v) => { const k = id + prop; if (last.get(k) === v) return; last.set(k, v); const el = $(id); if (prop === 'text') el.textContent = v; else if (prop === 'html') el.innerHTML = v; else if (prop === 'width') el.style.width = v; else if (prop === 'display') el.style.display = v; };
+const flag = (el, cls, on) => { if (el.classList.contains(cls) !== !!on) el.classList.toggle(cls, !!on); };
 const hud = {
   onLock(locked) {
     if (screen !== 'game') return;
@@ -71,7 +82,7 @@ const hud = {
   night(m) {
     show('game'); overlay('over', false);
     banner(`NIGHT ${m.n}`, `${FLAVOUR[m.n - 1] || ''}\nCollect ${m.quota} stars.`);
-    $('specNote').textContent = '';
+    put('specNote', 'text', '');
     if (!document.pointerLockElement) game.lock();
     setTimeout(() => { if (screen === 'game' && !document.pointerLockElement) hud.onLock(false); }, 300);
   },
@@ -80,9 +91,9 @@ const hud = {
     const line = !mine ? '' : !mine.alive ? 'You were taken. You wake again at dusk.' : mine.safe ? 'You rested indoors. +40 health.' : 'Dawn found you outside. No rest for you.';
     banner(`NIGHT ${m.n} SURVIVED`, line + '\nThe next night begins shortly…', true);
   },
-  grabbed() { $('specNote').textContent = ''; hud.alert('IT HAS YOU'); },
+  grabbed() { put('specNote', 'text', ''); hud.alert('IT HAS YOU'); },
   dead(cause) {
-    $('specNote').textContent = cause === 'hand' ? 'EATEN' : cause === 'debris' ? 'CRUSHED BY RUBBLE' : cause === 'minion' ? 'THE CRAWLERS GOT YOU' : 'THE FALL KILLED YOU';
+    put('specNote', 'text', cause === 'hand' ? 'EATEN' : cause === 'debris' ? 'CRUSHED BY RUBBLE' : cause === 'minion' ? 'THE CRAWLERS GOT YOU' : 'THE FALL KILLED YOU');
   },
   over(m) {
     overlay('pause', false); $('banner').classList.remove('show');
@@ -93,25 +104,25 @@ const hud = {
     overlay('over', true);
   },
   update(s) {
-    $('hNight').textContent = `NIGHT ${s.night || 1}`;
-    $('hStars').textContent = `★ ${s.stars || 0} / ${s.quota || 0}`;
-    const t = $('hTime');
-    if (s.phase === 'dawn') { t.textContent = `DAWN IN ${s.cd}`; t.classList.remove('late'); }
-    else { t.textContent = s.tl > 0 ? fmt(s.tl) : 'IT KNOWS'; t.classList.toggle('late', s.tl < 45); }
-    $('hHp').style.width = s.hp + '%'; $('hHpN').textContent = Math.round(s.hp);
-    $('hSt').style.width = s.stamina + '%'; $('hSt').parentElement.classList.toggle('tired', !!s.tired);
-    $('hAmmo').textContent = [s.bottles > 0 ? `BOTTLES ${'◆'.repeat(s.bottles)} (G)` : '', s.ammo > 0 ? `FLARE PISTOL ${'▮'.repeat(s.ammo)}` : '', s.torch ? 'TORCH ON' : ''].filter(Boolean).join('    ');
-    const z = $('hZone'); z.textContent = s.alive ? s.zone + (s.hidden ? '  ·  HIDDEN IN CLOSET' : s.crouch ? '  ·  crouched' : '') : '—'; z.classList.toggle('out', s.alive && !s.indoors && !s.hidden);
-    $('hMin').textContent = s.minions ? `CRAWLERS LOOSE: ${s.minions}` : '';
-    const e = $('hExpo'); e.style.width = Math.round(s.expo * 100) + '%'; e.classList.toggle('hot', s.expo > 0.75);
-    $('hNoise').style.width = Math.round(s.noise * 100) + '%';
-    $('prompt').innerHTML = s.prompt ? `<b>E</b>${s.prompt}` + (s.progress != null ? `<div class="bar"><i style="width:${Math.round(s.progress * 100)}%"></i></div>` : '') : '';
-    $('cross').style.display = s.alive ? '' : 'none';
-    $('hOthers').innerHTML = s.others.map((o) => `<li class="${o.alive ? '' : 'dead'}">${esc(o.name)}<span>${o.alive ? o.hp : 'taken'}</span></li>`).join('');
+    put('hNight', 'text', `NIGHT ${s.night || 1}`);
+    put('hStars', 'text', `★ ${s.stars || 0} / ${s.quota || 0}`);
+    if (s.phase === 'dawn') { put('hTime', 'text', `DAWN IN ${s.cd}`); flag($('hTime'), 'late', false); }
+    else { put('hTime', 'text', s.tl > 0 ? fmt(s.tl) : 'IT KNOWS'); flag($('hTime'), 'late', s.tl < 45); }
+    put('hHp', 'width', Math.round(s.hp) + '%'); put('hHpN', 'text', String(Math.round(s.hp)));
+    put('hSt', 'width', Math.round(s.stamina) + '%'); flag($('hSt').parentElement, 'tired', s.tired);
+    put('hAmmo', 'text', [s.bottles > 0 ? `BOTTLES ${'◆'.repeat(s.bottles)} (G)` : '', s.ammo > 0 ? `FLARE PISTOL ${'▮'.repeat(s.ammo)}` : '', s.torch ? 'TORCH ON' : ''].filter(Boolean).join('    '));
+    put('hZone', 'text', s.alive ? s.zone + (s.hidden ? '  ·  HIDDEN IN CLOSET' : s.crouch ? '  ·  crouched' : '') : '—'); flag($('hZone'), 'out', s.alive && !s.indoors && !s.hidden);
+    put('hMin', 'text', s.minions ? `CRAWLERS LOOSE: ${s.minions}` : '');
+    put('hExpo', 'width', Math.round(s.expo * 100) + '%'); flag($('hExpo'), 'hot', s.expo > 0.75);
+    put('hNoise', 'width', Math.round(s.noise * 100) + '%');
+    put('prompt', 'html', s.prompt ? `<b>E</b>${esc(s.prompt)}` + (s.progress != null ? `<div class="bar"><i style="width:${Math.round(s.progress * 100)}%"></i></div>` : '') : '');
+    put('cross', 'display', s.alive ? '' : 'none');
+    put('hOthers', 'html', s.others.map((o) => `<li class="${o.alive ? '' : 'dead'}">${esc(o.name)}<span>${o.alive ? o.hp : 'taken'}</span></li>`).join(''));
     if (!s.alive && s.playing) {
       const base = $('specNote').textContent.split('\n')[0];
-      $('specNote').textContent = base + (s.spec ? `\nWatching ${s.spec}  ·  click to switch` : '');
+      put('specNote', 'text', base + (s.spec ? `\nWatching ${s.spec}  ·  click to switch` : ''));
     }
+    put('fps', 'text', s.fps ? `${s.fps} FPS · ${s.res}%` : '');
   },
 };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -137,6 +148,9 @@ function onMsg(m) {
     case 'rooms': renderRooms(m.rooms); break;
     case 'err': error(m.msg); break;
     case 'lobby':
+      // solo has no lobby: the local room only says this when a finished game resets, and it must not
+      // swap the menu backdrop in behind the end-of-game screen
+      if (mode === 'solo') break;
       lobby = m;
       if (game) { game.seedWanted = m.seed; if (game.phase !== 'idle' || !game.attract) game.startAttract(m.seed); }
       if (mode === 'multi') { renderLobby(); if (document.pointerLockElement) document.exitPointerLock(); show('lobby'); }
@@ -251,11 +265,16 @@ function bindSettings() {
     inp.value = settings[k]; out.textContent = fmtV[k](+settings[k]);
     inp.addEventListener('input', () => { settings[k] = +inp.value; out.textContent = fmtV[k](settings[k]); save(); });
   }
-  for (const k of ['invertY', 'headBob']) { const c = $('s_' + k); c.checked = settings[k]; c.addEventListener('change', () => { settings[k] = c.checked; save(); }); }
+  for (const k of ['invertY', 'headBob', 'voice', 'showFps']) { const c = $('s_' + k); c.checked = settings[k]; c.addEventListener('change', () => { settings[k] = c.checked; save(); }); }
   const q = $('s_quality');
   for (const b of q.children) b.classList.toggle('on', b.dataset.v === settings.quality);
-  const NOTES = { low: 'Low: for weak laptops. Flat lighting, no reflections, plain shapes, small textures.', medium: 'Medium: bloom, anti-aliasing, reflections, surface relief, one shadow-casting lamp near you.', high: 'High: needs a real graphics card. Ambient occlusion, sharp textures, torch and lamp shadows, the most rubble.' };
-  const note = () => { $('qualityNote').textContent = NOTES[settings.quality] + (screen === 'game' && builtQuality !== settings.quality ? ' Applies when you return to the menu.' : ''); };
+  const NOTES = {
+    low: 'Low: for weak laptops. Flat surfaces, no reflections, plain shapes, small textures.',
+    medium: 'Medium: normal-mapped surfaces, sharp moon shadows, bloom, anti-aliasing, reflections, one shadow-casting lamp near you.',
+    high: 'High: ambient occlusion, large sharp textures, torch shadows, sharpening, the most rubble; supersamples when your card has room to spare.',
+  };
+  const DYN = ' Every setting adjusts its render resolution on the fly to hold its frame rate (turn on Show FPS to see it).';
+  const note = () => { $('qualityNote').textContent = NOTES[settings.quality] + DYN + (screen === 'game' && builtQuality !== settings.quality ? ' Applies when you return to the menu.' : ''); };
   note();
   q.addEventListener('pick', (e) => { settings.quality = e.detail; save(); note(); if (screen !== 'game' && game && builtQuality !== settings.quality) setTimeout(backdrop, 30); });
   function save() { store.set('tls.settings', settings); applySound(); if (game) game.applySettings(); }
