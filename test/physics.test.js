@@ -37,7 +37,8 @@ for (const seed of [20261111, 7, 4242]) {
     assert.strictEqual(zoneAt(W, P.x, P.y, P.z).kind, 'roof');
 
     // flat on floor 1: entry door, then balcony door
-    const flat = b.flats[1], y = K.FH;
+    const flat = b.flats.find((q) => q.balc), y = flat ? flat.y0 : 0;
+    if (!flat) continue;
     const entry = W.doors.find((d) => d.flat === flat.id && d.kind === 'entry'), balc = W.doors.find((d) => d.flat === flat.id && d.kind === 'balcony');
     P.place(wx(1.5), y + 0.05, wz(1.3));
     for (let i = 0; i < 20; i++) P.update(1 / 60, {});

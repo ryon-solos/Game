@@ -60,17 +60,24 @@ export class Sound {
     const am = c.createGain(); am.gain.value = 0.5; const aml = c.createOscillator(), amg = c.createGain(); aml.frequency.value = 0.35; amg.gain.value = 0.5; aml.connect(amg); amg.connect(am.gain);
     go.connect(gf); gf.connect(am); gn.connect(gnf); gnf.connect(gng); gng.connect(am); am.connect(this.growlG); this.growlG.connect(this.sfxG); this.growlG.connect(this.rev);
     go.start(); gl.start(); gn.start(); aml.start();
+    this.chaseG = c.createGain(); this.chaseG.gain.value = 0; this.chaseG.connect(this.musG); this.chaseG.connect(this.rev);
+    this.chaseO = [0, 1].map(() => { const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 185; const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1200; o.connect(f); f.connect(this.chaseG); o.start(); return o; });
     this.beatT = 0; this.eventT = 6;
   }
 
   // called every frame
-  update(dt, tension, monsterDist) {
+  update(dt, tension, monsterDist, charging) {
     if (!this.ctx) return;
     const c = this.ctx;
     this.tension += (tension - this.tension) * Math.min(1, dt * 1.5);
     this.tenG.gain.setTargetAtTime(this.tension * this.tension * 0.05, c.currentTime, 0.2);
     const near = Math.max(0, 1 - monsterDist / 30);
     this.growlG.gain.setTargetAtTime(near * near * 0.5, c.currentTime, 0.15);
+    if (this.chaseG) {   // a rising, sour pair of tones while it is running at someone
+      this.chaseK = (this.chaseK || 0) + ((charging ? 1 : 0) - (this.chaseK || 0)) * Math.min(1, dt * 2);
+      this.chaseG.gain.setTargetAtTime(this.chaseK * 0.09 * (0.4 + near), c.currentTime, 0.1);
+      this.chaseO.forEach((o, i) => o.frequency.setTargetAtTime((i ? 196 : 185) * (1 + this.chaseK * 0.6 + Math.sin(c.currentTime * 5) * 0.02), c.currentTime, 0.4));
+    }
     this.beatT -= dt;
     if (this.tension > 0.25 && this.beatT <= 0) {
       this.beatT = 1.05 - this.tension * 0.6;
@@ -169,6 +176,22 @@ export class Sound {
       case 'stun': O(1.4, 'sawtooth', 300, 40, 0.3); N(1.2, 'bandpass', 2500, 300, 2, 0.6); break;
       case 'dawn': [392, 523.3, 659.3, 784].forEach((f, i) => O(3, 'sine', f, 0, 0.12, i * 0.35)); break;
       case 'ui': O(0.05, 'sine', 620, 480, 0.12); break;
+      // ---- things breaking
+      case 'bang': O(0.35, 'sine', 70, 30, 1.3); N(0.25, 'lowpass', 500, 90, 1, 1.0); N(0.08, 'bandpass', 1800, 600, 3, 0.4, 0.03); break;
+      case 'lunge': N(0.35, 'bandpass', 300, 1600, 2, 0.7); O(0.3, 'sawtooth', 60, 140, 0.25); break;
+      case 'crash': N(0.9, 'lowpass', 4200, 120, 0.7, 1.4); O(0.7, 'sine', 66, 26, 1.2); for (let i = 0; i < 9; i++) N(0.06, 'bandpass', 500 + Math.random() * 2400, 0, 4, 0.5, 0.1 + Math.random() * 1.1); break;
+      case 'woodbreak': N(0.3, 'bandpass', 900, 300, 2, 1.2); O(0.2, 'sawtooth', 180, 60, 0.35); for (let i = 0; i < 6; i++) N(0.04, 'bandpass', 700 + Math.random() * 1600, 0, 6, 0.6, 0.03 + Math.random() * 0.5); break;
+      case 'glass': N(0.12, 'highpass', 3000, 0, 1, 1.0); for (let i = 0; i < 14; i++) O(0.25 + Math.random() * 0.4, 'sine', 2200 + Math.random() * 5000, 0, 0.07, Math.random() * 0.45); N(0.5, 'bandpass', 6000, 3000, 3, 0.3, 0.05); break;
+      case 'metalcrash': N(0.6, 'bandpass', 1400, 300, 1.5, 1.3); O(0.5, 'square', 140, 55, 0.3); O(0.9, 'sine', 420, 400, 0.12); O(0.9, 'sine', 633, 610, 0.08); O(0.5, 'sine', 58, 28, 0.9); break;
+      case 'snap': O(0.08, 'square', 3000, 400, 0.4); N(0.5, 'highpass', 4000, 0, 2, 0.5, 0.02); for (let i = 0; i < 5; i++) N(0.03, 'highpass', 5000, 0, 2, 0.6, 0.1 + Math.random() * 0.6); break;
+      case 'throw': N(0.18, 'bandpass', 500, 1800, 2, 0.35); break;
+      case 'slap': N(0.1, 'lowpass', 1600, 200, 1, 1.1); O(0.14, 'sine', 110, 45, 0.7); N(0.06, 'bandpass', 900, 0, 4, 0.5, 0.02); break;
+      // ---- things that are not there
+      case 'breath': for (let i = 0; i < 3; i++) { N(0.7, 'bandpass', 500, 900, 1.5, 0.5, i * 1.3); N(0.6, 'bandpass', 800, 400, 1.5, 0.35, i * 1.3 + 0.7); } break;
+      case 'whisper': for (let i = 0; i < 7; i++) N(0.16, 'bandpass', 1400 + Math.random() * 2200, 1200 + Math.random() * 2000, 7, 0.5, i * 0.21); break;
+      case 'knock': for (let i = 0; i < 3; i++) { O(0.14, 'sine', 150, 60, 0.9, i * 0.32); N(0.05, 'lowpass', 900, 0, 1, 0.5, i * 0.32); } break;
+      case 'scream': O(1.8, 'sawtooth', 700, 1500, 0.2); O(1.8, 'sawtooth', 730, 1380, 0.15); N(1.8, 'bandpass', 1600, 2800, 4, 0.5); break;
+      case 'sting': [233, 311, 440, 466, 932].forEach((f) => O(1.6, 'sawtooth', f, f * 1.02, 0.12)); N(0.3, 'highpass', 2500, 0, 1, 0.5); O(1.2, 'sine', 48, 30, 0.9); break;
       case 'closet': O(0.3, 'sawtooth', 150 + Math.random() * 60, 240, 0.05); N(0.25, 'bandpass', 700, 1200, 8, 0.2); O(0.08, 'sine', 140, 70, 0.3, 0.26); break;
       case 'channel': [660, 990, 1320].forEach((f, i) => O(1.0, 'sine', f, f * 1.5, 0.05, i * 0.12)); N(1.0, 'bandpass', 2000, 6000, 6, 0.08); break;
       case 'starcry': [1760, 2217, 2637].forEach((f, i) => O(1.6, 'sine', f, f * 0.98, 0.08, i * 0.05)); break;

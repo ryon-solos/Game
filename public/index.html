@@ -12,6 +12,7 @@
 <body>
 <canvas id="game"></canvas>
 <div id="backdrop"></div>
+<div id="loading">THE LONG STREET<span>raising the street…</span></div>
 
 <!-- ============================ HOME ============================ -->
 <section id="home" class="screen show">
@@ -105,7 +106,8 @@
     <table class="keys">
       <tr><td>W A S D</td><td>Move</td><td>Shift</td><td>Sprint (uses stamina, loud)</td></tr>
       <tr><td>C / Ctrl</td><td>Crouch (silent)</td><td>Space</td><td>Jump</td></tr>
-      <tr><td>E</td><td>Open / close doors</td><td>F</td><td>Torch (it can see the light)</td></tr>
+      <tr><td>E</td><td>Doors, closets, take a star</td><td>F</td><td>Torch (it can see the light)</td></tr>
+      <tr><td>Q / R</td><td>Lean left / right round a corner</td><td>G</td><td>Throw a bottle (it goes to the sound)</td></tr>
       <tr><td>Left click</td><td>Fire flare pistol</td><td>Esc</td><td>Pause / menu</td></tr>
     </table>
     <div class="row"><button id="btnFull2">Toggle fullscreen</button><span class="grow"></span><button id="btnSettingsClose" class="accent">Done</button></div>
@@ -117,13 +119,14 @@
     <h2>How to survive</h2>
     <ul class="how">
       <li><b>Take the stars.</b> They lie in the street, on balconies, on terraces, in flats and shut inside closets. Face one and press <b>E</b>. It takes a moment, and the star cries out: the thing learns where it was taken. Grab it and move.</li>
-      <li><b>It hears you.</b> Sprinting, doors, landing from a jump and gunshots all carry. Crouch-walking is silent. When it hears or sees you it comes fast.</li>
-      <li><b>Its hands come in through the windows</b> and reach every room. A closed door only slows a hand down. One touch and it lifts you to its mouth.</li>
-      <li><b>Closets.</b> Open one with <b>E</b>, step in, press <b>E</b> again to pull it shut. A hand that is only feeling around passes over a closed closet. A hand that knows you are there opens it.</li>
+      <li><b>It walks its round.</b> The whole street, end to end, stopping to listen and to feel through windows. It hears sprinting, doors, landings and gunshots. Crouch-walking is silent. When it knows where you are it drops onto all its limbs and runs.</li>
+      <li><b>Its hands are solid.</b> They smash furniture aside. A wall or a shut door stops a hand: you hear it strain, draw back, then punch through. From night three its hands are too big for windows, so it takes the wall out to get in. Flying masonry hurts.</li>
+      <li><b>Closets.</b> Open one with <b>E</b>, step in, press <b>E</b> again to pull it shut. A hand that is only feeling around slides past a closed closet. A hand that knows you are there tears it apart.</li>
       <li><b>Do not stay put.</b> Thirty seconds in one place, closet or not, and it simply knows. Watch the presence meter in the bottom left.</li>
-      <li><b>Crawlers.</b> From night three it calls things into the buildings: when you have half the stars, when it is angry, and from time to time. They hunt the stairwells and flats for about a minute, bite, and shriek your position to the street. They sometimes pull closets open.</li>
-      <li><b>It grows.</b> Each night it is taller, faster, uses more hands and remembers longer. On nights one and two it cannot reach the top floors and terraces, so it smashes them. Debris hurts.</li>
+      <li><b>Bottles.</b> Pick them up and throw one with <b>G</b>. Wherever it breaks, the thing goes to look. Lean with <b>Q</b> and <b>R</b> to see round a corner without stepping out.</li>
+      <li><b>Crawlers.</b> From night three it calls things into the buildings: when you have half the stars, when it is angry, and from time to time. They hunt the stairwells and flats for about a minute, bite, and shriek your position to the street.</li>
       <li><b>Flare pistols</b> stun it for a few seconds. It wakes up furious and knows where the shot came from.</li>
+      <li><b>Not everything you see is there.</b> Tailor's dummies turn to face you when you look away. Sometimes something stands in a doorway.</li>
       <li><b>Be indoors at dawn</b> to rest and recover health. Falls hurt. Bandages help.</li>
     </ul>
     <div class="row"><span class="grow"></span><button class="accent" id="btnHowClose">Close</button></div>
