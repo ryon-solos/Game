@@ -88,16 +88,33 @@ address in).
 | Goal | Take the night's quota of stars (street, balconies, terraces, flats, inside closets). Dawn comes 15 s later. Ten nights. |
 | Stars | Face one and press `E`. It takes about a second, and the star cries out: the monster learns where it was taken. |
 | Sound | Sprinting, doors, landings and gunshots are heard. Crouch-walking is silent. |
-| Hands | Come in through windows and balcony doors and reach every room. A closed door only delays a hand. One touch and it lifts you to its mouth and eats you. |
+| Patrol | With nothing to go on, the monster walks its rounds from one end of the street to the other, stopping to listen. |
+| Hands | Solid. They come in through windows and balcony doors and reach every room, but walls, doors and furniture are in their way: a hand that hits a wall strains at it, pulls back once, then punches through. Glass and furniture are simply smashed. One touch and it carries you out through the hole it made, lifts you to its face and eats you. |
+| Destruction | Every wall section, pane, door, wardrobe, piece of furniture, car, lamp and cable can be broken, by its hands or by its body walking through. The pieces fall, bounce and stay where they land, and the damage lasts for the rest of the game. Standing next to a wall that is punched in hurts. |
+| Bottles | Pick them up with `E` (up to 3), throw with `G`. The smash is loud: it goes to look. |
 | Closets | Open with `E`, step in, press `E` to shut it. A hand that is only feeling around passes over a closed closet; one that knows you are there opens it. |
 | Presence | 30 seconds in the same zone (closet or not) and the monster knows exactly where you are. |
-| Speed | The monster roams slowly, hurries to a sound (x1.7) and charges when it has seen you or knows where you are (x1.9). |
+| Speed | The monster roams slowly, hurries to a sound (x1.7) and, when it has seen you or knows where you are, drops onto all ten limbs and runs (x1.9). |
 | Crawlers | From night 3 the monster summons them into the buildings: at half the star quota, after being stunned, and periodically. They hunt stairwells and flats for about a minute, bite (30+ damage), shriek your position to the street, and sometimes pull closets open. 1 on nights 3-4, 2 on nights 5-7, 3 on nights 8-10. |
 | Flare pistols | Spawn in new places every night. A hit stuns the monster; it wakes up knowing where the shot came from. |
 | Health | Lost to falls, debris and crawler bites. Restored by bandages and by being indoors at dawn. |
 
-Controls: `WASD` move, `Shift` sprint, `C`/`Ctrl` crouch, `Space` jump, `E` doors / closets / stars,
-`F` torch, left click fire, `Esc` menu.
+Controls: `WASD` move, `Shift` sprint, `C`/`Ctrl` crouch, `Space` jump, `Q`/`R` lean round a corner,
+`E` doors / closets / stars / pick up, `F` torch, `G` throw a bottle, left click fire, `Esc` menu.
+
+Things that are only in your head (and only on your screen): whispers and knocks, a figure in a
+doorway that is gone when you look straight at it, tailor's dummies that have turned to face you
+when you look back, and a torch that gutters when it is close.
+
+### Graphics settings
+
+| | Meant for | What it turns on |
+|---|---|---|
+| Low | weak laptops, integrated graphics | 75% resolution, small textures, one moon shadow, 5 live lights, flat-edged geometry, interiors drawn only close by (about 0.4 million triangles and 900 draw calls a frame) |
+| Medium | an ordinary PC | full resolution, bump-mapped materials, chamfered edges, bloom, anti-aliasing, reflections, one shadow-casting lamp (about 2 million triangles a frame) |
+| High | a real graphics card | 1.5x resolution, 4K moon shadow, ambient occlusion, torch and lamp shadows, 12 live lights, large textures (about 6.5 million triangles a frame) |
+
+The game starts on Medium; change it under Settings. From the menu the street is rebuilt at once; changed mid-game, it applies when you return to the menu.
 
 ### Decisions on the spec's open questions
 
@@ -125,7 +142,7 @@ public/config.js     address of the multiplayer server for static hosting
 shared/world.js      deterministic street generator (runs on server and client)
 shared/room.js       authoritative game simulation and monster AI
 public/js/game.js    rendering, input, local player
-public/js/*.js       world meshes, physics, monster, crawlers, avatars, audio, post-processing, menus
+public/js/*.js       world meshes and breakage, rubble physics, monster, crawlers, avatars, audio, post-processing, menus
 test/                headless tests
 ```
 

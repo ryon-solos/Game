@@ -14,8 +14,8 @@ html, body { margin: 0; height: 100%; background: var(--deep); color: var(--ink)
 }
 #backdrop::after { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 40%, rgba(0, 0, 0, .75) 100%); }
 /* once the street is built it shows through: only a reading-side gradient and a vignette remain */
-body.menu #backdrop { background: linear-gradient(90deg, rgba(3, 7, 9, .86) 0%, rgba(3, 7, 9, .55) 34%, rgba(3, 7, 9, .12) 62%, rgba(3, 7, 9, .5) 100%); }
-body.menu #backdrop::after { background: radial-gradient(ellipse at 60% 50%, transparent 35%, rgba(0, 0, 0, .7) 100%), linear-gradient(180deg, rgba(0,0,0,.45), transparent 22%, transparent 78%, rgba(0,0,0,.6)); }
+body.menu #backdrop { background: linear-gradient(90deg, rgba(3, 7, 9, .78) 0%, rgba(3, 7, 9, .42) 30%, rgba(3, 7, 9, 0) 56%, rgba(3, 7, 9, .25) 100%); }
+body.menu #backdrop::after { background: radial-gradient(ellipse at 62% 50%, transparent 45%, rgba(0, 0, 0, .5) 100%), linear-gradient(180deg, rgba(0,0,0,.3), transparent 18%, transparent 82%, rgba(0,0,0,.45)); }
 #loading { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; gap: 14px; align-items: center; justify-content: center; background: #04080a; color: var(--ink); letter-spacing: .5em; font-size: 22px; transition: opacity .9s; pointer-events: none; }
 #loading span { font-size: 12px; letter-spacing: .3em; color: var(--dim); font-style: italic; animation: pulse 1.4s infinite; }
 #loading.gone { opacity: 0; }

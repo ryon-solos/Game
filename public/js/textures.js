@@ -335,6 +335,7 @@ export function makeMaterials(T, q = {}) {
   M.glass = new THREE.MeshStandardMaterial({ color: 0x4a6a62, roughness: 0.06, metalness: 0.4, transparent: true, opacity: 0.38 }); M.glass.userData.col = 0x9ab8b0;
   M.lampglass = new THREE.MeshBasicMaterial({ color: 0x6a5a40 }); M.lampglass.userData.col = 0x6a5a40;
   M.wax = new THREE.MeshStandardMaterial({ color: 0xd8cfb8, roughness: 0.6, emissive: 0x3a2a12 }); M.wax.userData.col = 0xd8cfb8;
+  M.door = new THREE.MeshStandardMaterial({ map: T.wood, bumpMap: bumps ? T.wood : null, bumpScale: 0.6, roughness: 0.5, vertexColors: true }); M.door.userData.col = 0x5d4a3c;
   // rubble: one material for every broken piece, tinted per chunk
   M.rubble = new THREE.MeshStandardMaterial({ map: T.concrete, bumpMap: bumps ? T.concrete : null, bumpScale: 2, roughness: 0.9, color: 0xffffff });
   return M;

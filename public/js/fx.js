@@ -121,7 +121,7 @@ export class Debris {
     this.mesh.setColorAt(i, _c.set(color).multiplyScalar(k)); this.mesh.instanceColor.needsUpdate = true;
     return p;
   }
-  puff(x, y, z, size, n = 1, spread = 1, color = 0x8a8580, alpha = 0.5) {
+  puff(x, y, z, size, n = 1, spread = 1, color = 0x4a4642, alpha = 0.34) {
     for (let i = 0; i < n; i++) {
       const d = this.dust[this.dn]; this.dn = (this.dn + 1) % this.dust.length;
       d.s.position.set(x + (Math.random() - 0.5) * spread, y + (Math.random() - 0.5) * spread * 0.6, z + (Math.random() - 0.5) * spread);
@@ -161,7 +161,7 @@ export class Debris {
     }
   }
 
-  update(dt) {
+  update(dt, cam = null) {
     let dirty = false;
     const col = this.col;
     for (let i = 0; i < this.max; i++) {
@@ -209,7 +209,9 @@ export class Debris {
       d.s.position.x += d.vx * dt; d.s.position.y += d.vy * dt; d.s.position.z += d.vz * dt;
       d.vx *= 0.98; d.vz *= 0.98;
       d.s.scale.setScalar(d.size * (0.5 + k * 1.6));
-      d.s.material.opacity = Math.sin(Math.min(1, k * 4) * Math.PI / 2) * (1 - k) * d.a;
+      // dust is not lit, so it must stay thin, and thinner still right in front of the eye, or it whites the whole view out
+      const near = cam ? Math.min(1, Math.max(0, (d.s.position.distanceTo(cam) - 0.7) / 3)) : 1;
+      d.s.material.opacity = Math.sin(Math.min(1, k * 4) * Math.PI / 2) * (1 - k) * d.a * near;
     }
   }
 

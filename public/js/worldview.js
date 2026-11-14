@@ -1,6 +1,7 @@
 // Turns the generated street into meshes, colliders, doors, closets, lights, signs and pickups,
 // and breaks named pieces of it into rubble when the simulation says so.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { Colliders } from './physics.js';
 import { SOFT, textTexture } from './textures.js';
@@ -23,6 +24,36 @@ function starGeometry() {
   return g;
 }
 // extra unit shapes: gable prism, arch band, awning wedge
+// A unit box with its edges cut off: the same silhouette as a one-segment rounded box for 44 triangles instead of 108.
+function chamferBox(c = 0.06) {
+  const P = [], N = [], I = [], h = 0.5, k = 0.5 - c, id = (sx, sy, sz, f) => ((sx > 0 ? 4 : 0) + (sy > 0 ? 2 : 0) + (sz > 0 ? 1 : 0)) * 3 + f;
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+    P.push(sx * h, sy * k, sz * k, sx * k, sy * h, sz * k, sx * k, sy * k, sz * h);
+    N.push(sx, 0, 0, 0, sy, 0, 0, 0, sz);
+  }
+  const tri = (a, b, c2) => {   // wind it so it faces outwards
+    const ax = P[a * 3], ay = P[a * 3 + 1], az = P[a * 3 + 2], ux = P[b * 3] - ax, uy = P[b * 3 + 1] - ay, uz = P[b * 3 + 2] - az, vx = P[c2 * 3] - ax, vy = P[c2 * 3 + 1] - ay, vz = P[c2 * 3 + 2] - az;
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    if (nx * (ax + P[b * 3] + P[c2 * 3]) + ny * (ay + P[b * 3 + 1] + P[c2 * 3 + 1]) + nz * (az + P[b * 3 + 2] + P[c2 * 3 + 2]) >= 0) I.push(a, b, c2); else I.push(a, c2, b);
+  };
+  const quad = (a, b, c2, d) => { tri(a, b, c2); tri(a, c2, d); };
+  for (const s of [-1, 1]) {
+    quad(id(s, -1, -1, 0), id(s, 1, -1, 0), id(s, 1, 1, 0), id(s, -1, 1, 0));
+    quad(id(-1, s, -1, 1), id(1, s, -1, 1), id(1, s, 1, 1), id(-1, s, 1, 1));
+    quad(id(-1, -1, s, 2), id(1, -1, s, 2), id(1, 1, s, 2), id(-1, 1, s, 2));
+    for (const t of [-1, 1]) {
+      quad(id(s, t, -1, 0), id(s, t, 1, 0), id(s, t, 1, 1), id(s, t, -1, 1));   // edges along z
+      quad(id(s, -1, t, 0), id(s, 1, t, 0), id(s, 1, t, 2), id(s, -1, t, 2));   // edges along y
+      quad(id(-1, s, t, 1), id(1, s, t, 1), id(1, s, t, 2), id(-1, s, t, 2));   // edges along x
+      for (const u of [-1, 1]) tri(id(s, t, u, 0), id(s, t, u, 1), id(s, t, u, 2));
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(new Array(48).fill(0), 2)); g.setIndex(I);
+  return g;
+}
+
 function shapes(seg) {
   const tri = new THREE.Shape(); tri.moveTo(-0.5, 0); tri.lineTo(0.5, 0); tri.lineTo(0, 1); tri.closePath();
   const gTri = new THREE.ExtrudeGeometry(tri, { depth: 1, bevelEnabled: false }); gTri.translate(0, 0, -0.5);
@@ -55,16 +86,24 @@ export class WorldView {
     this.time = 0;
     const shadows = q.shadow > 0;
     const facAdd = (g, e) => { let f = this.fac.get(g); if (!f) this.fac.set(g, (f = [])); f.push(e); };
-    const chunkOf = (x) => Math.max(-1, Math.min(5, Math.floor(x / 24)));   // 24 m stretches: few enough draw calls, still cullable
+    const chunkOf = (x) => Math.max(-1, Math.min(5, Math.floor(x / 24)));
+    // small things (doors, candles, decals, dummies) live in per-stretch groups that are switched off at a distance
+    this.detail = []; for (let i = -1; i <= 5; i++) { const g = new THREE.Group(); g.userData.x0 = i * 24; g.userData.x1 = i * 24 + 24; this.detail.push(g); this.group.add(g); }
+    const dadd = (o, x) => { this.detail[chunkOf(x) + 1].add(o); };   // 24 m stretches: few enough draw calls, still cullable
     const colOf = (m) => { const mat = M[m]; return mat ? (mat.userData.col ?? (mat.color ? mat.color.getHex() : 0x888888)) : 0x888888; };
 
+    // what is inside a flat can be dropped at a distance; what makes the street's outline stays
+    const INT_KIND = new Set(['furn', 'closet', 'wall']);
+    const INT_MAT = new Set(['wall0', 'wall1', 'wall2', 'wall3', 'wall4', 'wall5', 'wall6', 'wall7', 'wall8', 'floorwood', 'floorwood2', 'floortile', 'carpet', 'lino', 'ceil', 'paper', 'portrait', 'mattress', 'mirror', 'tvglass', 'fridge', 'meat', 'wax']);
+    const inside = (b) => (INT_MAT.has(b.m) || (b.g && W.brk[b.g] && INT_KIND.has(W.brk[b.g].kind)) ? 'i' : 'o');
+    const innerShadows = q.pshadow > 0 || q.torchShadow;   // nothing indoors is in moonlight, so it only needs to cast when lamps and the torch do
     // ---- boxes -> instanced meshes, one per material per stretch of street (so they can be culled)
     const by = new Map();
     for (const b of W.boxes) {
       const col = b.c ? this.col.add(b.x, b.y, b.z, b.sx, b.sy, b.sz) : null;
       let e = null;
       if (!b.nv) {
-        const k = b.m + '|' + chunkOf(b.x);
+        const k = b.m + '|' + chunkOf(b.x) + '|' + inside(b);
         let l = by.get(k);
         if (!l) by.set(k, (l = []));
         e = { b, col, index: l.length };
@@ -73,26 +112,26 @@ export class WorldView {
       if (b.g) facAdd(b.g, e || { b, col });
     }
     const unit = new THREE.BoxGeometry(1, 1, 1);
-    const round = q.round === 2 ? new RoundedBoxGeometry(1, 1, 1, 2, 0.08) : q.round === 1 ? new RoundedBoxGeometry(1, 1, 1, 1, 0.07) : unit;
+    const round = q.round ? chamferBox(q.round === 2 ? 0.07 : 0.06) : unit;
     this.roundGeo = round;
-    const instanced = (geo, mk, list, mat4) => {
+    const instanced = (geo, mk, list, mat4, ch, io) => {
       const mesh = new THREE.InstancedMesh(geo, M[mk] || M.concrete, list.length);
       list.forEach((e, i) => { e.mesh = mesh; e.mat = mat4(e.b); e.color = colOf(e.b.m); mesh.setMatrixAt(i, e.mat); });
-      mesh.castShadow = shadows && mk !== 'glass' && mk !== 'rail' && mk !== 'paint'; mesh.receiveShadow = true;
+      mesh.castShadow = shadows && mk !== 'glass' && mk !== 'rail' && mk !== 'paint' && (io === 'o' || innerShadows); mesh.receiveShadow = true;
       mesh.computeBoundingSphere(); mesh.frustumCulled = true;
       if (mk === 'glass') mesh.layers.set(FX_LAYER);
-      this.group.add(mesh);
+      if (io === 'i') this.detail[+ch + 1].add(mesh); else this.group.add(mesh);
     };
     for (const [k, list] of by) {
-      const mk = k.split('|')[0];
-      instanced(SOFT.has(mk) ? round : unit, mk, list, (b) => new THREE.Matrix4().compose(_p.set(b.x, b.y, b.z), _q.identity(), _s.set(b.sx, b.sy, b.sz)));
+      const [mk, ch, io] = k.split('|');
+      instanced(SOFT.has(mk) ? round : unit, mk, list, (b) => new THREE.Matrix4().compose(_p.set(b.x, b.y, b.z), _q.identity(), _s.set(b.sx, b.sy, b.sz)), ch, io);
     }
 
     // ---- round props
     const GEO = shapes(q.seg);
     const pb = new Map();
     for (const p of W.props) {
-      const k = p.s + '|' + p.m + '|' + chunkOf(p.x);
+      const k = p.s + '|' + p.m + '|' + chunkOf(p.x) + '|' + inside(p);
       let l = pb.get(k);
       if (!l) pb.set(k, (l = []));
       const e = { index: l.length, b: p, prop: true };
@@ -100,8 +139,8 @@ export class WorldView {
       if (p.g) facAdd(p.g, e);
     }
     for (const [k, list] of pb) {
-      const [s, mk] = k.split('|');
-      instanced(GEO[s] || GEO.cyl, mk, list, (p) => new THREE.Matrix4().compose(_p.set(p.x, p.y, p.z), _q.setFromEuler(_e.set(p.rx, p.ry, p.rz)), _s.set(p.sx, p.sy, p.sz)));
+      const [s, mk, ch, io] = k.split('|');
+      instanced(GEO[s] || GEO.cyl, mk, list, (p) => new THREE.Matrix4().compose(_p.set(p.x, p.y, p.z), _q.setFromEuler(_e.set(p.rx, p.ry, p.rz)), _s.set(p.sx, p.sy, p.sz)), ch, io);
     }
 
     // ---- ground
@@ -123,19 +162,25 @@ export class WorldView {
     // ---- doors
     const geoCache = new Map();
     const cached = (key, make) => { let g2 = geoCache.get(key); if (!g2) geoCache.set(key, (g2 = make())); return g2; };
-    const leafGeo = (w, h) => cached(`leaf${w.toFixed(2)}x${h.toFixed(2)}`, () => (q.round ? new RoundedBoxGeometry(w, h, 0.07, 1, 0.02) : new THREE.BoxGeometry(w, h, 0.07)));
-    const panelGeo = (w, h) => cached(`panel${w.toFixed(2)}x${h.toFixed(2)}`, () => new THREE.BoxGeometry(w, h, 0.09));
-    const knobGeo = new THREE.SphereGeometry(0.045, 8, 6);
+    const tint = (g, c) => { const n = g.attributes.position.count, a = new Float32Array(n * 3), col = new THREE.Color(c); for (let i = 0; i < n; i++) { a[i * 3] = col.r; a[i * 3 + 1] = col.g; a[i * 3 + 2] = col.b; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g.index ? g.toNonIndexed() : g; };
+    const part = (g, c, x, y, z) => { g.translate(x, y, z); return tint(g, c); };
+    const slab = (w, h, t) => (q.round ? new RoundedBoxGeometry(w, h, t, 1, 0.02) : new THREE.BoxGeometry(w, h, t));
+    // a whole door leaf (slab, two raised panels, two knobs) as one mesh: one draw call instead of five
+    const doorGeo = (len, h) => cached(`door${len.toFixed(2)}x${h.toFixed(2)}`, () => mergeGeometries([
+      part(slab(len - 0.04, h - 0.04, 0.07), 0x5d4a3c, len / 2, h / 2, 0),
+      part(new THREE.BoxGeometry(len - 0.3, 0.7, 0.09), 0x8a7258, len / 2, 0.55, 0), part(new THREE.BoxGeometry(len - 0.3, 0.7, 0.09), 0x8a7258, len / 2, 1.5, 0),
+      part(new THREE.SphereGeometry(0.045, 8, 6), 0xb8b4a8, len - 0.14, 1.0, 0.07), part(new THREE.SphereGeometry(0.045, 8, 6), 0xb8b4a8, len - 0.14, 1.0, -0.07)]));
+    const closetGeo = (half, sgn) => cached(`closet${half.toFixed(2)}${sgn}`, () => mergeGeometries([
+      part(slab(half - 0.02, 2.0, 0.07), 0x5d4a3c, half / 2, 1.02, 0), part(new THREE.BoxGeometry(half - 0.2, 1.6, 0.09), 0x8a7258, half / 2, 1.05, 0),
+      part(new THREE.SphereGeometry(0.045, 8, 6), 0xb8b4a8, half - 0.09, 1.05, 0.06 * sgn), part(new THREE.SphereGeometry(0.045, 8, 6), 0xb8b4a8, half - 0.09, 1.05, -0.06 * sgn)]));
     this.byG = new Map();   // group -> the special object that goes with it (door, closet)
     this.doors = W.doors.map((d) => {
       const pivot = new THREE.Group();
       pivot.position.set(d.hx, d.y, d.hz);
-      const leaf = new THREE.Mesh(leafGeo(d.len - 0.04, d.h - 0.04), M.wooddark);
-      leaf.position.set(d.len / 2, d.h / 2, 0); leaf.castShadow = shadows; leaf.receiveShadow = true;
-      for (const py of [0.55, 1.5]) { const panel = new THREE.Mesh(panelGeo(d.len - 0.3, 0.7), M.wood); panel.position.set(d.len / 2, py, 0); pivot.add(panel); }
-      for (const z of [0.07, -0.07]) { const knob = new THREE.Mesh(knobGeo, M.metal); knob.position.set(d.len - 0.14, 1.0, z); pivot.add(knob); }
+      const leaf = new THREE.Mesh(doorGeo(d.len, d.h), M.door);
+      leaf.castShadow = shadows; leaf.receiveShadow = true;
       pivot.add(leaf);
-      this.group.add(pivot);
+      dadd(pivot, d.hx);
       const a0 = angle(d.cd), a1 = near(a0, angle(d.od));
       const horiz = Math.abs(d.cd[0]) > 0.5;
       const col = this.col.add(d.cx, d.y + d.h / 2, d.cz, horiz ? d.len : 0.2, d.h, horiz ? 0.2 : d.len);
@@ -150,10 +195,8 @@ export class WorldView {
       const dir = [(c.h1[0] - c.h0[0]) / c.w, (c.h1[1] - c.h0[1]) / c.w], half = c.w / 2;
       const leaves = [[c.h0, dir, 1], [c.h1, [-dir[0], -dir[1]], -1]].map(([h, cd, sgn]) => {
         const pivot = new THREE.Group(); pivot.position.set(h[0], c.y, h[1]);
-        const leaf = new THREE.Mesh(leafGeo(half - 0.02, 2.0), M.wooddark); leaf.position.set(half / 2, 1.02, 0); leaf.castShadow = shadows;
-        const inset = new THREE.Mesh(panelGeo(half - 0.2, 1.6), M.wood); inset.position.set(half / 2, 1.05, 0);
-        const knob = new THREE.Mesh(knobGeo, M.metal); knob.position.set(half - 0.09, 1.05, 0.06 * sgn); const knob2 = knob.clone(); knob2.position.z *= -1;
-        pivot.add(leaf, inset, knob, knob2); this.group.add(pivot);
+        const leaf = new THREE.Mesh(closetGeo(half, sgn), M.door); leaf.castShadow = shadows; leaf.receiveShadow = true;
+        pivot.add(leaf); dadd(pivot, h[0]);
         const a0 = angle(cd);
         const out = near(a0, angle(c.f)), a1 = a0 + (out - a0) * 1.15;   // swing outwards, a little past square
         pivot.rotation.y = a0;
@@ -190,7 +233,7 @@ export class WorldView {
         s.color = 0xff7a28; s.power = 36; s.dist = 16;
       } else if (l.kind === 'neon') { s.color = l.color; s.power = 16; s.dist = 13; }
       else { s.color = 0xff2a2a; s.power = 9; s.dist = 9; }
-      if (s.mesh) this.group.add(s.mesh);
+      if (s.mesh) dadd(s.mesh, l.x);
       this.srcs.push(s);
     }
     // decals: glowing sigils on walls and floors, stains and blood on floors
@@ -207,7 +250,7 @@ export class WorldView {
         if (s && !d.floor) s.mesh = mesh;
       } else { mesh = new THREE.Mesh(floorGeo, d.kind === 'blood' ? bloodMat : stainMat); mesh.scale.setScalar(d.size); mesh.rotation.y = d.rot || 0; mesh.receiveShadow = true; }
       mesh.position.set(d.x, d.y, d.z); mesh.layers.set(FX_LAYER);
-      this.group.add(mesh); this.decals.push({ mesh, g: d.g });
+      dadd(mesh, d.x); this.decals.push({ mesh, g: d.g });
     }
     // lettering
     this.signs = [];
@@ -222,7 +265,7 @@ export class WorldView {
       mesh.position.set(sg.x, sg.y, sg.z);
       mesh.rotation.y = sg.nx ? (sg.nx > 0 ? Math.PI / 2 : -Math.PI / 2) : (sg.nz < 0 ? Math.PI : 0);
       if (sg.kind !== 'number') mesh.layers.set(FX_LAYER);
-      this.group.add(mesh);
+      if (neon || sg.kind === 'shop') this.group.add(mesh); else dadd(mesh, sg.x);
       const rec = { mesh, g: sg.g, neon, ph: Math.random() * 40 };
       this.signs.push(rec);
       if (neon) { const s = this.srcs.find((q2) => q2.kind === 'neon' && q2.g === sg.g); if (s) s.sign = rec; }
@@ -243,24 +286,24 @@ export class WorldView {
     }
     this.pool = Array.from({ length: q.lights }, (_, i) => {
       const p = new THREE.PointLight(0xffffff, 0, 8, 1.7);
-      if (i < q.pshadow) { p.castShadow = true; p.shadow.mapSize.set(q.pshadowSize, q.pshadowSize); p.shadow.bias = -0.004; p.shadow.normalBias = 0.05; p.shadow.camera.near = 0.06; }
+      if (i < q.pshadow) { p.castShadow = true; p.shadow.mapSize.set(q.pshadowSize, q.pshadowSize); p.shadow.bias = -0.004; p.shadow.normalBias = 0.05; p.shadow.camera.near = 0.06; p.shadow.autoUpdate = false; }
       scene.add(p); return p;
     });
     this.poolT = 0; this.near = [];
 
     // ---- tailor's dummies: they turn to face you while you are not looking
-    const mqMat = new THREE.MeshStandardMaterial({ color: 0xb4aa98, roughness: 0.75, map: T.fabric });
-    const mqDark = M.wooddark;
-    const mqTorso = new THREE.LatheGeometry([[0.01, 0], [0.17, 0.02], [0.19, 0.2], [0.13, 0.42], [0.2, 0.68], [0.21, 0.78], [0.08, 0.86], [0.06, 0.94]].map(([r, y]) => new THREE.Vector2(r, y)), 14);
+    const mqMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.75, map: T.fabric, vertexColors: true });
+    const bake = (geo, c, x, y, z, sx = 1, sy = 1, sz = 1, rz = 0) => { const g2 = geo.clone(); g2.applyMatrix4(new THREE.Matrix4().compose(_p.set(x, y, z), _q.setFromEuler(_e.set(0, 0, rz)), _s.set(sx, sy, sz))); return tint(g2, c); };
+    const cloth = 0xb4aa98, stand = 0x3a2e26;
+    const mqParts = [bake(GEO.cyl, stand, 0, 0.03, 0, 0.5, 0.06, 0.5), bake(GEO.cyl, stand, 0, 0.5, 0, 0.05, 0.95, 0.05),
+      bake(new THREE.LatheGeometry([[0.01, 0], [0.17, 0.02], [0.19, 0.2], [0.13, 0.42], [0.2, 0.68], [0.21, 0.78], [0.08, 0.86], [0.06, 0.94]].map(([r, y]) => new THREE.Vector2(r, y)), 14), cloth, 0, 0.95, 0, 1, 1, 0.66),
+      bake(GEO.sph, cloth, 0, 2.0, 0, 0.22, 0.27, 0.24)];
+    for (const sgn of [1, -1]) mqParts.push(bake(GEO.sph, cloth, sgn * 0.21, 1.7, 0, 0.12, 0.12, 0.12), bake(GEO.cyl, cloth, sgn * 0.24, 1.42, 0, 0.075, 0.56, 0.075, sgn * 0.08), bake(GEO.cyl, cloth, sgn * 0.27, 0.92, 0.02, 0.06, 0.5, 0.06));
+    for (const g2 of mqParts) for (const k of Object.keys(g2.attributes)) if (!['position', 'normal', 'uv', 'color'].includes(k)) g2.deleteAttribute(k);
+    const mqGeo = mergeGeometries(mqParts);
     this.mannequins = W.mannequins.map((m) => {
-      const g = new THREE.Group(); g.position.set(m.x, m.y, m.z); g.rotation.y = m.ry;
-      const add = (geo, mat, x, y, z, sx = 1, sy = 1, sz = 1) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); o.scale.set(sx, sy, sz); o.castShadow = shadows; g.add(o); return o; };
-      add(GEO.cyl, mqDark, 0, 0.03, 0, 0.5, 0.06, 0.5); add(GEO.cyl, mqDark, 0, 0.5, 0, 0.05, 0.95, 0.05);
-      const torso = new THREE.Mesh(mqTorso, mqMat);
-      torso.position.y = 0.95; torso.scale.z = 0.66; torso.castShadow = shadows; g.add(torso);
-      add(GEO.sph, mqMat, 0, 2.0, 0, 0.22, 0.27, 0.24);
-      for (const sgn of [1, -1]) { add(GEO.sph, mqMat, sgn * 0.21, 1.7, 0, 0.12, 0.12, 0.12); add(GEO.cyl, mqMat, sgn * 0.24, 1.42, 0, 0.075, 0.56, 0.075).rotation.z = sgn * 0.08; add(GEO.cyl, mqMat, sgn * 0.27, 0.92, 0.02, 0.06, 0.5, 0.06); }
-      this.group.add(g);
+      const g = new THREE.Mesh(mqGeo, mqMat); g.position.set(m.x, m.y, m.z); g.rotation.y = m.ry; g.castShadow = shadows; g.receiveShadow = true;
+      dadd(g, m.x);
       return { g, m, t: Math.random() * 2, gkey: m.g, gone: false };
     });
 
@@ -374,7 +417,7 @@ export class WorldView {
   }
 
   // dread 0..1: lights gutter when it is close. look: unit view direction (for the dummies)
-  update(dt, cam, dread = 0, look = null) {
+  update(dt, cam, dread = 0, look = null, indoors = false) {
     this.time += dt;
     const t = this.time;
     for (const o of this.doors) {
@@ -402,6 +445,7 @@ export class WorldView {
       body.position.y = Math.sin(t * 2 + p.ph) * 0.07 + p.take * 0.5;
       body.scale.setScalar(Math.max(0.1, 1 + p.take * 0.5 - p.take * p.take * 1.2));
     }
+    for (const g of this.detail) { const d = cam.x < g.userData.x0 ? g.userData.x0 - cam.x : cam.x > g.userData.x1 ? cam.x - g.userData.x1 : 0; g.visible = d < this.q.detail; }
     // dummies turn towards you while you look away
     if (look) for (const m of this.mannequins) {
       if (m.gone) continue;
@@ -437,13 +481,18 @@ export class WorldView {
         if (s.cone) { s.cone.material.uniforms.power.value = 0.16 * s.f; s.halo.material.opacity = 0.4 * s.f; }
       }
     }
+    this.frame = (this.frame || 0) + 1;
     for (let i = 0; i < this.pool.length; i++) {
       const L = this.pool[i], s = this.near[i];
       // (the lights stay "visible" even at zero: changing how many lights exist makes the renderer recompile every material)
-      if (!s) { L.intensity = 0; if (L.castShadow) L.shadow.autoUpdate = false; continue; }
+      if (!s) { L.intensity = 0; L.userData.src = null; continue; }
       const fade = Math.min(1, Math.max(0, (36 - s.d) / 8));
-      if (L.castShadow) L.shadow.autoUpdate = true;
-      L.position.set(s.x, s.y, s.z); L.color.setHex(s.color); L.distance = s.dist; L.intensity = s.power * s.f * fade;
+      // a lamp does not move: its shadow cube (six views of the room) only needs redrawing every few frames, or when it changes lamp
+      if (L.castShadow && (L.userData.src !== s || (this.frame + i * 2) % this.q.pEvery === 0)) { L.shadow.needsUpdate = true; L.userData.src = s; }
+      L.position.set(s.x, s.y, s.z); L.color.setHex(s.color); L.distance = s.dist; 
+      // lights have no walls to stop them: from indoors, what is out in the street is turned right down so it cannot flood the room
+      const leak = indoors && (s.kind === 'neon' || s.kind === 'street' || s.kind === 'porch' || s.kind === 'fire') ? 0.1 : 1;
+      L.intensity = s.power * s.f * fade * leak;
     }
   }
 

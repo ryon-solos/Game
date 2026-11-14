@@ -14,9 +14,9 @@ const _v = new THREE.Vector3(), _d = new THREE.Vector3();
 
 // Three tiers. Low is built for weak laptops, medium for ordinary PCs, high for a real graphics card.
 export const QUALITY = {
-  low: { pr: 0.75, shadow: 1024, pshadow: 0, pshadowSize: 256, torchShadow: false, bloom: false, ao: false, smaa: false, env: false, tex: 0.5, aniso: 1, bump: false, round: 0, seg: 7, lights: 5, debris: 220, ash: 200 },
-  medium: { pr: 1, shadow: 2048, pshadow: 1, pshadowSize: 512, torchShadow: false, bloom: true, ao: false, smaa: true, env: true, tex: 1, aniso: 4, bump: true, round: 1, seg: 10, lights: 8, debris: 500, ash: 500 },
-  high: { pr: 1.5, shadow: 4096, pshadow: 2, pshadowSize: 1024, torchShadow: true, bloom: true, ao: true, smaa: true, env: true, tex: 2, aniso: 8, bump: true, round: 2, seg: 14, lights: 12, debris: 900, ash: 800 },
+  low: { pr: 0.75, shadow: 1024, pshadow: 0, pshadowSize: 256, torchShadow: false, bloom: false, ao: false, smaa: false, env: false, tex: 0.5, aniso: 1, bump: false, round: 0, seg: 7, lights: 5, debris: 220, ash: 200, detail: 30, moonEvery: 4, pEvery: 4 },
+  medium: { pr: 1, shadow: 2048, pshadow: 1, pshadowSize: 512, torchShadow: false, bloom: true, ao: false, smaa: true, env: true, tex: 1, aniso: 4, bump: true, round: 1, seg: 10, lights: 8, debris: 500, ash: 500, detail: 52, moonEvery: 3, pEvery: 3 },
+  high: { pr: 1.5, shadow: 4096, pshadow: 2, pshadowSize: 1024, torchShadow: true, bloom: true, ao: true, smaa: true, env: true, tex: 2, aniso: 8, bump: true, round: 2, seg: 14, lights: 12, debris: 900, ash: 800, detail: 90, moonEvery: 2, pEvery: 3 },
 };
 
 export class Game {
@@ -49,6 +49,7 @@ export class Game {
       moon.castShadow = true; moon.shadow.mapSize.set(q.shadow, q.shadow);
       const sc = moon.shadow.camera; sc.left = -75; sc.right = 75; sc.top = 40; sc.bottom = -40; sc.near = 1; sc.far = 160;
       moon.shadow.bias = -0.0008; moon.shadow.normalBias = 0.06;
+      moon.shadow.autoUpdate = false; moon.shadow.needsUpdate = true; this.moonN = 0;   // the street barely moves: redraw its shadow every few frames
     }
     const disc = new THREE.Mesh(new THREE.CircleGeometry(9, 32), new THREE.MeshBasicMaterial({ color: 0xcfe0f0, fog: false }));
     disc.position.set(-40, 120, -150); disc.lookAt(60, 0, 0); disc.layers.set(FX_LAYER); scene.add(disc);
@@ -279,12 +280,12 @@ export class Game {
     if (parts.length) {
       const power = m.big ? 10 : k === 'glass' ? 4 : k === 'street' ? 8.5 : masonry ? 7.5 : 6;
       this.debris.shatter(parts, hit, d, power, Math.round(this.q.debris * (m.big ? 0.5 : 0.2)));
-      if (masonry) this.debris.puff(m.x, m.y, m.z, m.big ? 4.5 : 2.6, m.big ? 10 : 5, m.big ? 6 : 2);
+      if (masonry) this.debris.puff(m.x, m.y, m.z, m.big ? 3.6 : 2.2, m.big ? 8 : 4, m.big ? 6 : 2);
       else if (k !== 'glass') this.debris.puff(m.x, m.y, m.z, 1.3, 2, 1, 0x6a6258);
     } else if (m.big) {
       // nothing left to break there: it still throws up what is lying around
       for (let i = 0; i < 40; i++) this.debris.chunk(m.x + (Math.random() - 0.5) * 7, m.y + Math.random() * 1.2, m.z + d[2] * Math.random() * 1.5, (Math.random() - 0.5) * 7, 2 + Math.random() * 6, d[2] * (Math.random() * 9 - 2), 0.1 + Math.random() * 0.25, undefined, undefined, 0x7a6a60);
-      this.debris.puff(m.x, m.y + 0.5, m.z, 4, 8, 6);
+      this.debris.puff(m.x, m.y + 0.5, m.z, 3.4, 7, 6);
     }
     for (const pts of cables) { const mid = pts[(pts.length / 2) | 0]; this.debris.sparks(mid.x, mid.y, mid.z, 14); this.debris.sparks(pts[2].x, pts[2].y, pts[2].z, 6); }
     const snd = m.big ? 'smash' : cables.length ? 'snap' : k === 'glass' ? 'glass' : k === 'street' ? 'metalcrash' : masonry ? 'crash' : 'woodbreak';
@@ -473,8 +474,8 @@ export class Game {
       // monster + crawlers
       if (this.snap) { this.monster.update(dt, this.snap.m, cam.position); this.updateMinions(dt, this.snap.mn || []); }
       cam.getWorldDirection(_d);
-      this.world.update(dt, cam.position, this.fear || 0, _d);
-      this.debris.update(dt);
+      this.world.update(dt, cam.position, this.fear || 0, _d, zoneAt(this.W, cam.position.x, cam.position.y - 1.5, cam.position.z).indoors);
+      this.debris.update(dt, cam.position);
       this.updateGhost(dt);
     }
 
@@ -526,8 +527,10 @@ export class Game {
     snd.listener.x = c.x; snd.listener.y = c.y; snd.listener.z = c.z; snd.listener.yaw = cam.rotation.y;
     snd.update(dt, playing && this.alive ? this.fear : this.attract ? 0.25 : 0, playing || this.attract ? md : 999, playing && this.snap && this.snap.m.fast);
 
+    if (this.q.shadow && (this.moonN = (this.moonN + 1) % this.q.moonEvery) === 0) this.moon.shadow.needsUpdate = true;
     this.blackout = Math.max(0, (this.blackout || 0) - dt * 0.5);
-    this.post.render(dt, { hurt: this.hurtFx, fear: this.fear, warp: this.warp, gamma: set.gamma * (1 - this.blackout * 0.85), dead: this.alive || !playing || this.eaten ? 0 : 0.6 });
+    this.renderer.toneMappingExposure = this.attract ? 2.7 : 1.2;   // the menu shows the street off; the game keeps it dark
+    this.post.render(dt, { hurt: this.hurtFx, fear: this.fear, warp: this.warp, gamma: set.gamma * (this.attract ? 1.55 : 1) * (1 - this.blackout * 0.85), dead: this.alive || !playing || this.eaten ? 0 : 0.6 });
 
     this.hudT -= dt;
     if (this.hudT <= 0 && this.world && !this.attract) { this.hudT = 0.1; this.updateHud(); }
@@ -546,7 +549,7 @@ export class Game {
     if (a.shotT <= 0) { a.shot = (a.shot + 1) % 4; a.shotT = 13; a.anchor = a.x; a.cut = 1; }
     const m = this.monster, t = this.time;
     let px, py, pz, lx = m.x, ly = a.h * 0.62, lz = m.z;
-    if (a.shot === 0) { px = a.anchor + a.dir * 24; py = 1.5; pz = -2.6 + Math.sin(t * 0.1) * 0.6; }                 // in the road, it walks at you
+    if (a.shot === 0) { px = a.anchor + a.dir * 19; py = 1.5; pz = -2.6 + Math.sin(t * 0.1) * 0.6; }                 // in the road, it walks at you
     else if (a.shot === 1) { px = m.x - a.dir * 9; py = 7.4; pz = 7.1; ly = a.h * 0.85; }                              // from a balcony, level with its ribs
     else if (a.shot === 2) { px = a.anchor - a.dir * 6; py = 0.5; pz = 3.4; ly = a.h * 0.5; }                         // from the gutter as it passes
     else { px = m.x + a.dir * 15 + Math.sin(t * 0.15) * 3; py = 12; pz = -6.5; ly = a.h * 0.9; }                      // high, across the roofs

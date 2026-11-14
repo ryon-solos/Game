@@ -2,10 +2,28 @@
 // that bend in through the openings they use. When it knows where someone is it drops onto all
 // ten limbs and runs like an insect, head twisted upside-down.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const UP = new THREE.Vector3(0, 1, 0), FWD = new THREE.Vector3(0, 0, -1);
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _q = new THREE.Quaternion();
 const V = () => new THREE.Vector3();
+
+// weld the parts that never move relative to their parent into one mesh per material: hundreds of draw calls saved
+function fuse(root) {
+  const nodes = []; root.traverse((o) => { if (!o.isMesh) nodes.push(o); });
+  for (const p of nodes) {
+    const by = new Map();
+    for (const c of p.children) if (c.isMesh && c.userData.st && !c.children.length) { const k = c.material.uuid + (c.castShadow ? 's' : ''); if (!by.has(k)) by.set(k, []); by.get(k).push(c); }
+    for (const list of by.values()) {
+      if (list.length < 2) continue;
+      const geos = list.map((m) => { m.updateMatrix(); const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone(); g.applyMatrix4(m.matrix); for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') g.deleteAttribute(k); return g; });
+      const one = new THREE.Mesh(mergeGeometries(geos), list[0].material); one.castShadow = list[0].castShadow;
+      for (const m of list) { p.remove(m); m.geometry.dispose(); }
+      for (const g of geos) g.dispose();
+      p.add(one);
+    }
+  }
+}
 
 // place a unit-height cylinder (origin at centre) between two points
 function span(mesh, a, b, r) {
@@ -41,9 +59,9 @@ export class MonsterView {
     const gum = new THREE.MeshStandardMaterial({ color: 0x5a0e0c, roughness: 0.2 });
     this.eyeMat = new THREE.MeshBasicMaterial({ color: 0xfff0c0 });
     this.heartMat = new THREE.MeshBasicMaterial({ color: 0xff3a18 });
-    this.mawMat = new THREE.MeshBasicMaterial({ color: 0x7a0a06 });
+    this.mawMat = new THREE.MeshBasicMaterial({ color: 0x1c0302 });
     const mk = (geo, mat = skin) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; g.add(m); return m; };
-    const add = (parent, geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; parent.add(m); return m; };
+    const add = (parent, geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; m.userData.st = 1; parent.add(m); return m; };
 
     // ---- torso (unit model is 10 m tall, then scaled). Origin at the hips, +x is forward.
     const body = this.body = new THREE.Group(); g.add(body);
@@ -59,14 +77,14 @@ export class MonsterView {
         rib.rotation.set(Math.PI / 2, 0, sgn > 0 ? 0.12 : Math.PI + 0.35); rib.scale.y = 0.78;
       }
     }
-    this.heart = add(body, new THREE.SphereGeometry(0.36, 12, 10), this.heartMat, 0.62, 2.9, 0); this.heart.castShadow = false;
+    this.heart = add(body, new THREE.SphereGeometry(0.36, 12, 10), this.heartMat, 0.62, 2.9, 0); this.heart.castShadow = false; this.heart.userData.st = 0;
     this.heartLight = new THREE.PointLight(0xff3018, 8, 22, 1.5); this.heartLight.position.set(1.4, 2.9, 0); body.add(this.heartLight);
     for (const sgn of [1, -1]) for (let i = 0; i < 4; i++) {   // shoulder spikes
       const s = add(body, new THREE.ConeGeometry(0.12, 1.1 - i * 0.16, 5), bone, -0.2 + i * 0.2, 3.8, sgn * (0.6 + i * 0.1)); s.rotation.x = sgn * 0.55;
     }
     // a second mouth, in the belly
     this.belly = new THREE.Group(); this.belly.position.set(0.5, 0.95, 0); body.add(this.belly);
-    this.bellyHole = add(this.belly, new THREE.SphereGeometry(0.4, 10, 8), this.mawMat, 0, 0, 0); this.bellyHole.castShadow = false;
+    this.bellyHole = add(this.belly, new THREE.SphereGeometry(0.4, 10, 8), this.mawMat, 0, 0, 0); this.bellyHole.castShadow = false; this.bellyHole.userData.st = 0;
     this.bellyLips = [1, -1].map((sgn) => { const p = new THREE.Group(); this.belly.add(p); add(p, new THREE.SphereGeometry(0.42, 10, 8), gum, 0, 0, 0).scale.set(0.5, 1.5, 0.3); for (let i = 0; i < 6; i++) { const t = add(p, new THREE.ConeGeometry(0.035, 0.26, 4), bone, 0.12, -0.45 + i * 0.18, -sgn * 0.04); t.rotation.x = -sgn * Math.PI / 2; } return { p, sgn }; });
     // little arms on the chest that never stop moving
     this.vest = [];
@@ -108,18 +126,18 @@ export class MonsterView {
       for (let i = 0; i < 5; i++) { const tine = add(root, new THREE.ConeGeometry(0.05, 1.0 - i * 0.12, 5), bone, 0.12 + i * 0.02, 0.45 + i * 0.4, sgn * 0.12); tine.rotation.set(sgn * (0.5 + i * 0.1), 0, -0.9 + i * 0.2); }
     }
     for (const [x, y, z, r] of [[0.7, 0.26, 0.14, 0.03], [0.7, 0.26, -0.14, 0.03], [0.3, 0.3, 0.4, 0.03], [0.3, 0.3, -0.4, 0.03], [0.85, 0.12, 0.2, 0.022], [0.85, 0.12, -0.2, 0.022]]) {
-      const e = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), this.eyeMat); e.position.set(x, y, z); roll.add(e);
+      const e = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), this.eyeMat); e.position.set(x, y, z); e.userData.st = 1; roll.add(e);
     }
     // jaws: a hinged lower jaw, two side mandibles, a tongue
     this.jaw = new THREE.Group(); this.jaw.position.set(-0.1, -0.22, 0); roll.add(this.jaw);
     const lower = add(this.jaw, new THREE.CylinderGeometry(0.16, 0.34, 1.05, 12, 1, false, 0, Math.PI), skullM, 0.55, -0.02, 0); lower.rotation.set(Math.PI / 2, 0, -Math.PI / 2); lower.scale.x = 0.9;
-    this.maw = add(roll, new THREE.SphereGeometry(0.26, 10, 8), this.mawMat, 0.45, -0.25, 0); this.maw.scale.set(1.5, 0.5, 0.9); this.maw.castShadow = false;
+    this.maw = add(roll, new THREE.SphereGeometry(0.26, 10, 8), this.mawMat, 0.45, -0.25, 0); this.maw.scale.set(1.5, 0.5, 0.9); this.maw.castShadow = false; this.maw.userData.st = 0;
     for (let i = 0; i < 18; i++) {
       const up = i < 9, k = (i % 9) / 8, a = (k - 0.5) * 1.6;
       const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.032, 0.22 + (i % 3 === 1 ? 0.14 : 0), 4), bone);
       tooth.position.set(0.55 + Math.cos(a) * 0.45, up ? -0.2 : 0.08, Math.sin(a) * 0.26);
       if (up) tooth.rotation.z = Math.PI;
-      (up ? roll : this.jaw).add(tooth);
+      tooth.userData.st = 1; tooth.castShadow = true; (up ? roll : this.jaw).add(tooth);
     }
     this.tongue = new THREE.Group(); this.tongue.position.set(0.5, -0.02, 0); this.jaw.add(this.tongue);
     add(this.tongue, new THREE.ConeGeometry(0.09, 1.5, 6), gum, 0.7, 0, 0).rotation.z = -Math.PI / 2;
@@ -151,10 +169,10 @@ export class MonsterView {
         const fg = new THREE.Group(); const a = (f - 2) * 0.42;
         fg.position.set(Math.sin(a) * 0.26, 0, -Math.cos(a) * 0.3); fg.rotation.y = -a;
         const s1 = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.065, 0.55, 6), skin); s1.rotation.x = -Math.PI / 2; s1.position.z = -0.27; s1.castShadow = true;
-        const kn = new THREE.Mesh(new THREE.SphereGeometry(0.065, 6, 5), bone); kn.position.z = -0.54;
+        const kn = new THREE.Mesh(new THREE.SphereGeometry(0.065, 6, 5), bone); kn.castShadow = true; kn.userData.st = 1;
         const tipG = new THREE.Group(); tipG.position.z = -0.54;
         const s2 = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.75, 5), bone); s2.rotation.x = -Math.PI / 2; s2.position.z = -0.37; s2.castShadow = true;
-        tipG.add(s2); fg.add(s1, kn, tipG); hand.add(fg); fingers.push({ fg, tipG });
+        s2.userData.st = 1; tipG.add(s2, kn); fg.add(s1, tipG); hand.add(fg); fingers.push({ fg, tipG });
       }
       this.arms.push({
         i, upper: mk(cyl), lower: mk(cyl2), elbow: mk(joint), ext: [mk(cyl2), mk(cyl2)], knots: [mk(joint), mk(joint)], spike: mk(spike, bone), strip: mk(spike, skin),
@@ -162,6 +180,7 @@ export class MonsterView {
         plant: V(), from: V(), to: V(), st: 1, planted: false,
       });
     }
+    fuse(g);
     this.x = 0; this.z = 0; this.h = 9.3; this.yaw = 0; this.walk = 0; this.stun = 0; this.t = 0; this.state = 'roam';
     this.tilt = 0.12; this.drop = 0; this.jawOpen = 0; this.eating = -1; this.crawl = 0; this.rollA = 0; this.look = V(); this.lookK = 0;
     this.onStep = null;
@@ -241,7 +260,7 @@ export class MonsterView {
     this.maw.scale.y = 0.3 + this.jawOpen * 0.9;
     this.tongue.scale.setScalar(0.25 + Math.max(0, this.jawOpen - 0.3) * 1.1);
     this.tongue.rotation.set(0, Math.sin(t * 9) * 0.5 * this.jawOpen, -0.5 + Math.sin(t * 7.3) * 0.4 * this.jawOpen);
-    this.mouthLight.intensity = (hunt || eat || crawling ? 16 : peek ? 8 : 0) * (0.8 + 0.2 * Math.sin(t * 20));
+    this.mouthLight.intensity = (eat ? 5 : hunt || crawling ? 14 : peek ? 8 : 0) * (0.8 + 0.2 * Math.sin(t * 20));
     this.eyeMat.color.setHex(stunned ? (Math.sin(t * 25) > 0 ? 0x223040 : 0x050505) : hunt || eat || crawling ? 0xff2a18 : peek ? 0xffb040 : 0xfff0c0);
     // pupils slide round the sockets to keep the viewer in sight
     if (eye) {
