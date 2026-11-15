@@ -3,7 +3,7 @@
 # (see render.yaml) and its address set as the GAME_SERVER environment variable in
 # Netlify: Site configuration > Environment variables.
 [build]
-  command = "npm run build:static"
+  command = "npm run audio && npm run build:static"
   publish = "dist"
 
 [build.environment]

@@ -15,7 +15,8 @@ git clone https://github.com/ryon-solos/Game.git
 cd Game
 ```
 
-After that, one command pulls the latest code from GitHub, installs anything new and starts the game:
+After that, one command pulls the latest code from GitHub, installs anything new, downloads the game's sounds and
+starts the game:
 
 ```bash
 npm run play
@@ -29,7 +30,8 @@ Windows do the same thing.) Other commands:
 | `npm start` | Run the game without updating |
 | `npm run dev` | Run it and restart the server whenever server code changes (browser code only needs a page refresh) |
 | `npm run update` | Only pull the latest code and install dependencies |
-| `npm test` | Headless simulation, physics and crawler checks |
+| `npm run audio` | Download the recorded sounds and the monster's voice into `public/audio/` |
+| `npm test` | Headless simulation, physics, crawler and audio-download checks |
 | `PORT=4000 npm start` | Use another port |
 
 ### Playing with friends from your computer
@@ -125,21 +127,39 @@ The game starts on Medium; change it under Settings. From the menu the street is
 
 ### Sound
 
-Everything is synthesised in the browser with WebAudio; there are no sound files.
+The game uses **recorded sounds** where they have been downloaded and **synthesises** everything else in the
+browser with WebAudio, so it always has sound, files or no files.
 
+- **Recordings:** footsteps, doors, glass, wood and masonry breaking, the flare pistol, the monster's roars, growl,
+  stomps and eating, the crawlers' skittering, a heartbeat, heavy and scared breathing, night wind, a dark drone, a
+  suspense loop and a chase loop, thunder, a church bell, knocking, whispers, a far scream and a music box. All are
+  from [freesound.org](https://freesound.org) under Creative Commons 0 or Attribution; credits are written to
+  `public/audio/CREDITS.md`. The sources are listed in `scripts/audio-sources.mjs`.
+- **The monster's voice:** 59 lines ("You will taste delicious.", "I can hear your heart.", "Thief.") recorded with
+  [Fish Audio](https://fish.audio) in a deep, raspy voice, played from its mouth, slowed a little, with weight and grit
+  added and its own throat breathing under the words. Lines are always subtitled; switch the voice off under
+  Settings > Monster voice. Without the recordings the browser's speech voice says the lines instead.
+- **Music that follows the danger:** the drone is always there; the suspense loop swells in as the monster gets
+  close; the chase loop takes over when it drops onto all ten limbs and runs at you.
+- **Your body:** the heartbeat is single recorded beats played at your heart rate (calm 62 bpm, past 160 running
+  scared, louder with fear, exertion and low health); heavy panting comes in after a sprint and shaking, scared
+  breathing when it is close, quieter when you crouch still and hold it.
 - **3D sound:** effects are placed round you with HRTF panning (you can tell front from behind), muffled when a
   wall is between you and them, and sent to the reverb of the space they happen in: the long street, with its
   slap echo between the facades, or a small room.
-- **Your body:** breathing that follows how winded and how scared you are (near silent at rest, ragged panting
-  after a sprint, held and shaking when you hide with it close), and a heartbeat that speeds up and gets louder
-  with fear, exertion and low health.
-- **The monster:** a breathing growl that follows where it is, footfalls you feel, and roars from a synthesised
-  throat. It **talks**: short lines that fit what just happened ("You will taste delicious.", "I can hear your
-  heart.", "Thief."), spoken by the browser's speech voice pitched right down, with the monster's throat under
-  every word. Lines are always subtitled; switch the voice off under Settings > Monster voice. (If your browser or
-  system has no speech voices installed you get the subtitles and the growl only.)
-- **Ambience:** wind and gusts (muffled indoors), a low drone, a tension pad that swells as it gets close, and
-  things in the dark: dripping water, metal groaning, distant thunder, a far-off wail, a music box, whispering.
+
+**Getting the recordings.** They are downloaded, not stored in the code:
+
+```bash
+npm run audio
+```
+
+This fetches whatever is missing into `public/audio/` (about 10 MB) and is safe to run again. `npm run play`, the
+GitHub Pages workflow, Netlify and Render run it for you. To put the files in the repository once for everyone, run
+the **Fetch game audio** workflow from the Actions tab: it downloads them and commits them to the branch. Each
+freesound sound's licence is checked when it is downloaded; anything that is not CC0 or CC BY is skipped and the next
+choice for that slot is used. A free `FREESOUND_API_KEY` (https://freesound.org/apiv2/apply) makes the download use
+freesound's API instead of its web pages.
 
 ### Decisions on the spec's open questions
 
@@ -161,14 +181,16 @@ server.js            static files + WebSocket lobbies
 play.sh / play.bat   update from GitHub and run locally
 render.yaml          Render (server) deployment
 netlify.toml         Netlify (static front-end) deployment
-.github/workflows/   GitHub Pages deployment of the static front-end
-scripts/             static build
+.github/workflows/   GitHub Pages deployment of the static front-end; "Fetch game audio" (commits the sounds)
+scripts/             static build, audio download (fetch-audio.mjs) and its source list (audio-sources.mjs)
+public/audio/        downloaded sounds and their credits (made by npm run audio)
 public/config.js     address of the multiplayer server for static hosting
 shared/world.js      deterministic street generator (runs on server and client)
 shared/room.js       authoritative game simulation and monster AI
 public/js/game.js    rendering, input, local player
 public/js/*.js       world meshes and breakage, rubble physics, monster, crawlers, avatars, audio, the monster's lines, post-processing, menus
-test/                headless tests (simulation, physics, crawler renderer)
+test/                headless tests (simulation, physics, crawler renderer, audio download and sample slicing)
 ```
 
-All textures and sounds are generated in code; there are no asset downloads.
+All textures are generated in code. Sounds are recordings fetched by `npm run audio` (see Sound above), with every
+sound also synthesised in code as a fallback.

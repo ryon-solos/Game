@@ -1,0 +1,31 @@
+# Downloads the recorded sounds (freesound effects and music, the monster's Fish Audio voice lines; see
+# scripts/audio-sources.mjs) and commits them to public/audio on the branch it is run on, so the game ships with them
+# and local runs do not need to download anything.
+# Run it from the Actions tab: "Fetch game audio" > Run workflow (pick the branch).
+# Optional: a FREESOUND_API_KEY repository secret makes the freesound side use the official API.
+name: Fetch game audio
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/fetch-audio.mjs
+        env:
+          FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}
+      - name: Commit the files
+        run: |
+          git add -f public/audio
+          if git diff --cached --quiet; then echo "Nothing new to commit."; exit 0; fi
+          git -c user.name="github-actions[bot]" -c user.email="41898333+github-actions[bot]@users.noreply.github.com" \
+            commit -m "Fetch game audio (freesound effects and music, monster voice lines)"
+          git push

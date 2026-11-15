@@ -1,4 +1,6 @@
-// Every sound is synthesised with WebAudio at run time: no downloads.
+// The game's sound. Recorded sounds (freesound effects and music, the monster's Fish Audio voice: see samples.js and
+// `npm run audio`) are used where they have been downloaded; everything else, and everything when they have not, is
+// synthesised with WebAudio at run time.
 //
 //  - one-shot effects, placed in 3D (HRTF) round the listener, muffled through walls, sent to the reverb of
 //    the space they happen in (a long stone street with slap echoes between the facades, or a small room)
@@ -6,6 +8,7 @@
 //  - the monster: a breathing growl that follows it, footfalls you feel, and a voice (see speak())
 //  - a horror ambience bed: wind and gusts, a low drone, a tension pad, and things happening in the dark
 import { K } from '../shared/world.js';
+import { Bank } from './samples.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -26,6 +29,9 @@ export class Sound {
     this.paused = false;
     this.body = { alive: false, exert: 0, fear: 0, hp: 100, tired: false, crouch: false, still: true };
     this.breathT = 0; this.beatT = 0; this.eventT = 6; this.gustT = 2; this.chaseK = 0;
+    this.bank = null;             // recorded sounds, once loaded
+    this.loopG = {};              // gain of each recorded loop that is playing
+    this.synthK = { drone: 1, wind: 1, ten: 1, chase: 1 };   // synth beds step back when a recording takes over
   }
 
   // ctx: optional, for rendering offline in tests
@@ -70,6 +76,10 @@ export class Sound {
     this.revInG = c.createGain(); this.revInG.gain.value = 0.42; this.revIn.connect(this.revInG); this.revInG.connect(this.sfxG);
     this.applyVol();
     this.startAmbience();
+    // recorded sounds load in the background and take over from the synth as they arrive (not when rendering offline)
+    this.bank = new Bank(c);
+    this.bank.onReady = (k) => this.onSample(k);
+    if (!ctx && typeof fetch !== 'undefined') this.bank.load().catch(() => {});
     // the browser loads its speech voices lazily: ask now so they are there when the thing first talks
     try { if (typeof speechSynthesis !== 'undefined') { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices(); } } catch {}
   }
@@ -105,7 +115,11 @@ export class Sound {
     this.duck.gain.setTargetAtTime(p ? 0.12 : 1, this.ctx.currentTime, 0.15);
     if (p) this.hush();
   }
-  hush() { try { if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch {} }
+  // stop whatever it is saying
+  hush() {
+    try { if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch {}
+    if (this.voiceSrc) { try { this.voiceSrc.stop(); } catch {} this.voiceSrc = null; }
+  }
 
   src(buf, loop = false) { const s = this.ctx.createBufferSource(); s.buffer = buf || this.white; s.loop = loop; return s; }
 
@@ -154,7 +168,7 @@ export class Sound {
     this.growlG = c.createGain(); this.growlG.gain.value = 0; this.growlG.connect(this.growlLP);
     this.growlWet = c.createGain(); this.growlWet.gain.value = 0; this.growlG.connect(this.growlWet); this.growlWet.connect(this.revOut);
     this.growlBreath = c.createGain(); this.growlBreath.gain.value = 0; this.growlBreath.connect(this.growlG);
-    const throat = c.createWaveShaper(); throat.curve = this.curve; throat.connect(this.growlBreath);
+    const throat = c.createWaveShaper(); throat.curve = this.curve; this.growlSynthG = c.createGain(); throat.connect(this.growlSynthG); this.growlSynthG.connect(this.growlBreath);
     const fry = c.createOscillator(); fry.type = 'sawtooth'; fry.frequency.value = 34;
     const jit = this.src(this.brown, true), jg = c.createGain(); jg.gain.value = 14; jit.connect(jg); jg.connect(fry.frequency);
     const fryG = c.createGain(); fryG.gain.value = 0.55; fry.connect(fryG);
@@ -163,6 +177,52 @@ export class Sound {
     fry.start(t); jit.start(t, rnd(0, 2)); gn.start(t, rnd(0, 2));
     this.growlPhase = 0;
   }
+
+  // ------------------------------------------------------------------ recorded sounds
+  // a recording has arrived: the beds, music and body loops start, and their synth stand-ins step back
+  onSample(key) {
+    const c = this.ctx, t = c.currentTime, buf = this.bank.any(key);
+    if (this.loopG[key] || (key === 'growl' && this.growlLoop)) return;     // already playing
+    const loop = (dest, gain0, rate = 1) => {
+      const s = this.src(buf, true), g = c.createGain(); g.gain.value = gain0; s.playbackRate.value = rate;
+      s.connect(g); g.connect(dest); s.start(t + 0.05, rnd(0, buf.duration * 0.9));
+      this.loopG[key] = g; this.loopS = this.loopS || {}; this.loopS[key] = s;
+      return g;
+    };
+    switch (key) {
+      case 'amb_drone': loop(this.musG, 0).gain.setTargetAtTime(0.42, t, 3); this.synthK.drone = 0.4; break;
+      case 'amb_wind': {
+        // the real wind replaces the synth rush; the gusts still swell it, and indoors it is behind glass
+        this.windSF = c.createBiquadFilter(); this.windSF.type = 'lowpass'; this.windSF.frequency.value = 9000; this.windSF.connect(this.musG);
+        loop(this.windSF, 0).gain.setTargetAtTime(0.5, t, 3); this.synthK.wind = 0.35; break;
+      }
+      case 'mus_tension': { const g = loop(this.musG, 0); g.connect(this.revOut); this.synthK.ten = 0.45; break; }
+      case 'mus_chase': { const g = loop(this.musG, 0); g.connect(this.revOut); this.synthK.chase = 0.3; break; }
+      case 'breath_scared': case 'breath_run': loop(this.bodyG, 0); break;
+      case 'growl': {
+        // its breathing growl: the recording, slowed and dropped, through the same breath gate as the synth throat
+        const s = this.src(buf, true); s.playbackRate.value = 0.72; const g = c.createGain(); g.gain.value = 1.3;
+        s.connect(g); g.connect(this.growlBreath); s.start(t + 0.05, rnd(0, buf.duration * 0.8)); this.growlLoop = s;
+        this.growlSynthG.gain.setTargetAtTime(0.4, t, 1); break;
+      }
+    }
+  }
+  // play a recording into `out` at time `at`. Returns false if there is none (the caller synthesises instead).
+  S(key, out, at, o = {}) {
+    const buf = this.bank && this.bank.any(key);
+    if (!buf) return false;
+    const c = this.ctx, s = this.src(buf), g = c.createGain();
+    s.playbackRate.value = (o.rate || 1) * (o.jit === false ? 1 : rnd(0.96, 1.04));
+    g.gain.value = o.gain == null ? 1 : o.gain;
+    let node = s;
+    if (o.lp) { const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = o.lp; node.connect(f); node = f; }
+    node.connect(g); g.connect(out);
+    const off = o.offset || 0, len = o.dur ? Math.min(o.dur, buf.duration - off) : buf.duration - off;
+    if (o.dur && o.dur < buf.duration - off) { const end = at + o.dur / s.playbackRate.value; g.gain.setValueAtTime(g.gain.value, end - 0.15); g.gain.linearRampToValueAtTime(0.0001, end); }
+    s.start(at, off, len + 0.05);
+    return true;
+  }
+  has(key) { return !!(this.bank && this.bank.has(key)); }
 
   // a panner placed relative to the listener (we do our own distance curve)
   panner(hrtf) {
@@ -192,17 +252,23 @@ export class Sound {
     const c = this.ctx, now = c.currentTime, L = this.listener;
     this.tension += (tension - this.tension) * Math.min(1, dt * 1.2);
     const T = this.tension;
-    this.tenG.gain.setTargetAtTime(0.04 + T * T * 0.45, now, 0.4);
+    const SK = this.synthK, LG = this.loopG;
+    this.tenG.gain.setTargetAtTime((0.04 + T * T * 0.45) * SK.ten, now, 0.4);
     this.tenF.frequency.setTargetAtTime(380 + T * 1500, now, 0.5);
     this.highG.gain.setTargetAtTime(T > 0.55 ? (T - 0.55) * 0.5 : 0, now, 0.3);
-    this.droneG.gain.setTargetAtTime(0.35 + T * 0.35, now, 0.8);
+    this.droneG.gain.setTargetAtTime((0.35 + T * 0.35) * SK.drone, now, 0.8);
+    // the recorded music: the drone is always there, the suspense loop swells in as it gets close
+    if (LG.amb_drone) LG.amb_drone.gain.setTargetAtTime(0.42 * (1 - this.chaseK * 0.5), now, 1.2);
+    if (LG.mus_tension) LG.mus_tension.gain.setTargetAtTime(T < 0.2 ? 0 : Math.pow((T - 0.2) / 0.8, 1.4) * 0.55 * (1 - this.chaseK * 0.7), now, 0.9);
     // indoors the wind is a muffled moan behind the glass
     this.windF.frequency.setTargetAtTime(L.indoors ? 170 : 420, now, 0.6);
+    if (this.windSF) this.windSF.frequency.setTargetAtTime(L.indoors ? 520 : 9000, now, 0.6);
     this.gustT -= dt;
     if (this.gustT <= 0) {
       this.gustT = rnd(3, 9);
       const peak = rnd(0.12, 0.3) * (L.indoors ? 0.55 : 1), dur = rnd(1.5, 4);
-      this.windG.gain.setTargetAtTime(peak, now, dur * 0.35); this.windG.gain.setTargetAtTime(0.1 * (L.indoors ? 0.6 : 1), now + dur, dur * 0.5);
+      this.windG.gain.setTargetAtTime(peak * SK.wind, now, dur * 0.35); this.windG.gain.setTargetAtTime(0.1 * (L.indoors ? 0.6 : 1) * SK.wind, now + dur, dur * 0.5);
+      if (LG.amb_wind) { LG.amb_wind.gain.setTargetAtTime(peak * 2.4, now, dur * 0.35); LG.amb_wind.gain.setTargetAtTime(0.32 * (L.indoors ? 0.7 : 1), now + dur, dur * 0.5); }
       if (Math.random() < 0.45) { const f = rnd(700, 1600); this.whistF.frequency.setTargetAtTime(f, now, 0.6); this.whistF.frequency.setTargetAtTime(f * rnd(0.7, 1.3), now + dur * 0.6, 0.8); this.whistG.gain.setTargetAtTime(L.indoors ? 0.05 : 0.025, now, dur * 0.3); this.whistG.gain.setTargetAtTime(0, now + dur, 0.6); }
     }
     // the monster's breath
@@ -218,7 +284,8 @@ export class Sound {
       void r;
     } else this.growlG.gain.setTargetAtTime(0, now, 0.3);
     this.chaseK += ((charging ? 1 : 0) - this.chaseK) * Math.min(1, dt * 1.5);
-    this.chaseG.gain.setTargetAtTime(this.chaseK * 0.06 * (0.4 + near), now, 0.15);
+    this.chaseG.gain.setTargetAtTime(this.chaseK * 0.06 * (0.4 + near) * SK.chase, now, 0.15);
+    if (LG.mus_chase) LG.mus_chase.gain.setTargetAtTime(this.chaseK * 0.6, now, this.chaseK > 0.5 ? 0.25 : 1.5);
     this.chaseO.forEach((o, i) => o.frequency.setTargetAtTime((i ? 98 : 92.5) * (1 + this.chaseK * 0.5), now, 0.6));
     this.updateBody(dt);
     if (this.paused) return;
@@ -230,8 +297,20 @@ export class Sound {
   // s: {alive, exert 0..1 (how winded), fear 0..1, hp, tired, crouch, still}
   setBody(s) { Object.assign(this.body, s); }
   updateBody(dt) {
-    const b = this.body;
-    if (!b.alive || this.paused) { this.breathT = 0.5; return; }
+    const b = this.body, LG = this.loopG, now = this.ctx.currentTime;
+    if (!b.alive || this.paused) {
+      this.breathT = 0.5;
+      for (const k of ['breath_scared', 'breath_run']) if (LG[k]) LG[k].gain.setTargetAtTime(0, now, 0.4);
+      return;
+    }
+    // recorded breathing: heavy panting after running, shaking scared breaths when it is close (quieter when you
+    // crouch still and hold it). The synth breath carries the quiet in-between.
+    const hold = b.crouch && b.still && b.fear > 0.35;
+    const runK = clamp((b.exert - 0.25) / 0.55, 0, 1) + (b.tired ? 0.3 : 0);
+    const fearK = clamp((b.fear - 0.3) / 0.5, 0, 1) * (hold ? 0.55 : 1) * (1 - Math.min(1, runK) * 0.6);
+    if (LG.breath_run) { LG.breath_run.gain.setTargetAtTime(Math.min(1, runK) * 0.55, now, 0.6); this.loopS.breath_run.playbackRate.setTargetAtTime(0.94 + b.exert * 0.14, now, 1); }
+    if (LG.breath_scared) LG.breath_scared.gain.setTargetAtTime(fearK * 0.5, now, 0.5);
+    const recorded = (LG.breath_run ? Math.min(1, runK) : 0) + (LG.breath_scared ? fearK : 0);
     const lowHp = clamp((45 - b.hp) / 45, 0, 1);
     // heart: 62 bpm calm, up past 160 running scared
     const bpm = clamp(62 + b.fear * 85 + b.exert * 45 + lowHp * 20, 55, 175);
@@ -245,11 +324,11 @@ export class Sound {
     // breath: slow and nearly silent at rest, ragged panting when winded, shaking and held when hiding scared
     this.breathT -= dt;
     if (this.breathT <= 0) {
-      const e = b.exert, hold = b.crouch && b.still && b.fear > 0.35;
+      const e = b.exert;
       const rate = 13 + e * 34 + b.fear * 10 + (b.tired ? 8 : 0);       // breaths a minute
       const cyc = 60 / rate;
       this.breathT = cyc * rnd(0.9, 1.15) * (hold ? 1.6 : 1);
-      const v = clamp(0.06 + e * 0.75 + b.fear * 0.2 + (b.tired ? 0.25 : 0), 0, 1) * (hold ? 0.45 : 1);
+      const v = clamp(0.06 + e * 0.75 + b.fear * 0.2 + (b.tired ? 0.25 : 0), 0, 1) * (hold ? 0.45 : 1) * clamp(1 - recorded * 1.5, 0, 1);
       this.breathe(cyc, v, { tired: b.tired || e > 0.8, shaky: b.fear > 0.5 || hold, wheeze: lowHp > 0.4 });
     }
   }
@@ -257,6 +336,8 @@ export class Sound {
     const c = this.ctx, t = c.currentTime + 0.02, out = c.createGain();
     const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 160 + v * 120;
     out.gain.value = 0.55 * v; lp.connect(out); out.connect(this.bodyG);
+    // a recorded beat: brighter as it gets louder, a touch quicker at speed
+    if (this.has('heart')) { lp.frequency.value = 900 + v * 1800; this.S('heart', lp, t, { gain: 1.5, rate: 1 + clamp((0.8 - period) * 0.25, 0, 0.12), jit: false }); return; }
     const thump = (at, f, a) => {
       const o = c.createOscillator(), g = c.createGain();
       o.frequency.setValueAtTime(f, at); o.frequency.exponentialRampToValueAtTime(f * 0.55, at + 0.14);
@@ -319,6 +400,7 @@ export class Sound {
         o.connect(g); g.connect(d2); o.start(s); o.stop(s + 0.1);
       }
     } else if (r < 0.46) {      // thunder, far off
+      if (this.has('thunder')) { const g = c.createGain(); g.gain.value = rnd(0.5, 0.9); g.connect(this.musG); g.connect(this.revOut); this.S('thunder', g, t, { rate: rnd(0.75, 0.95), lp: 2500 }); return; }
       const n = this.src(this.brown), f = c.createBiquadFilter(), g = c.createGain(), dur = rnd(4, 7);
       f.type = 'lowpass'; f.frequency.setValueAtTime(700, t); f.frequency.exponentialRampToValueAtTime(90, t + dur);
       g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.5, t + 0.3); for (let k = 1; k < 5; k++) g.gain.linearRampToValueAtTime(rnd(0.15, 0.45), t + k * dur / 6); g.gain.linearRampToValueAtTime(0, t + dur);
@@ -326,12 +408,15 @@ export class Sound {
     } else if (r < 0.58) {      // the building settles: a slow wooden creak
       this.creak(t, this.spot(L.x + rnd(-8, 8), L.y + rnd(1, 4), L.z + rnd(-8, 8), 0.7, false, this.musG), rnd(0.8, 1.8), 0.3);
     } else if (r < 0.68) {      // something wailing a long way off (a dog? it does not sound like a dog)
+      if (this.has('scream') && Math.random() < 0.4) { this.S('scream', dest, t, { gain: 0.5, rate: rnd(0.7, 0.85), lp: 1800 }); return; }
       this.throat(t, dest, { f0: rnd(380, 520), f1: rnd(260, 340), dur: rnd(2, 3.2), vowels: ['u', 'o', 'u'], v: 0.18, breath: 0.4, vib: 6 });
     } else if (r < 0.78) {      // chains, or something metal dragged
       for (let i = 0; i < 14; i++) { const s = t + i * rnd(0.05, 0.14); this.N(dest, s, 0.03, 'bandpass', rnd(3000, 6000), 0, 9, 0.25 * rnd(0.4, 1)); this.O(dest, s, 0.12, 'sine', rnd(2100, 3400), 0, 0.03); }
     } else if (r < 0.88) {      // whispering
+      if (this.S('whisper', this.spot(L.x + rnd(-5, 5), L.y + 1.5, L.z + rnd(-5, 5), 0.5, false, this.musG), t, { gain: 0.25, dur: 4 })) return;
       this.whisper(t, this.spot(L.x + rnd(-5, 5), L.y + 1.5, L.z + rnd(-5, 5), 0.5, false, this.musG), 0.5);
     } else if (r < 0.95) {      // a music box, far away, out of tune
+      if (this.S('musicbox', dest, t, { gain: 0.6, rate: rnd(0.88, 0.97), dur: rnd(5, 9) })) return;
       const notes = [659.3, 587.3, 523.3, 493.9, 523.3, 440, 392, 415.3];
       const st = (Math.random() * 3) | 0;
       for (let i = 0; i < 5; i++) {
@@ -339,6 +424,7 @@ export class Sound {
         for (const [m, g] of [[1, 0.06], [2.76, 0.02], [5.4, 0.008]]) this.O(dest, s, 1.6, 'sine', f * m, 0, g);
       }
     } else {                    // a scream, cut off
+      if (this.S('scream', dest, t, { gain: 0.55, rate: rnd(0.9, 1.05), lp: 2500, dur: rnd(0.9, 1.4) })) return;
       this.throat(t, dest, { f0: rnd(650, 800), f1: rnd(900, 1100), dur: rnd(0.8, 1.4), vowels: ['a', 'e'], v: 0.2, breath: 0.35, vib: 9, cut: true });
     }
   }
@@ -448,6 +534,7 @@ export class Sound {
     const N = (...a) => this.N(out, t + (a[6] || 0), a[0], a[1], a[2], a[3], a[4], a[5], a[7]);
     const O = (dur, type, f0, f1, v, delay = 0, att) => this.O(out, t + delay, dur, type, f0, f1, v, att);
     const indoors = this.listener.indoors;
+    if (this.bank && this.recorded(name, out, t, N, O)) return;
     switch (name) {
       // ---- you
       case 'step':
@@ -546,6 +633,69 @@ export class Sound {
         O(1.6, 'sine', 70, 25, 1.1, 0, 0.01); [622, 659, 932, 988].forEach((f) => O(1.6, 'sawtooth', f, f * 1.05, 0.06, 0, 0.02)); N(1.4, 'bandpass', 300, 5000, 3, 0.4); break;
     }
   }
+  // the recorded version of a one-shot, with synth layered where it adds weight (the sub of a footfall, grit falling
+  // after a crash, the flare burning off). Returns false when there is no recording, so play() synthesises it.
+  recorded(name, out, t, N, O) {
+    const S = (k, o) => this.S(k, out, t + ((o && o.delay) || 0), o), has = (k) => this.has(k);
+    switch (name) {
+      case 'step': return this.listener.indoors ? S('step_in', { gain: 0.42 }) : S('step_out', { gain: 0.45 });
+      case 'door': return S('door', { gain: 0.8, dur: 1.6 });
+      case 'closet': return S('closet', { gain: 0.5, dur: 1.2 });
+      case 'doorslam': if (!has('doorslam')) return false; S('doorslam', { gain: 0.7 }); O(0.3, 'sine', 90, 36, 0.6); return true;
+      case 'gun':
+        if (!has('gun')) return false;
+        S('gun', { gain: 0.8, rate: 0.9 }); N(1.4, 'bandpass', 3000, 2200, 2, 0.14, 0.08); this.trickle(out, t + 0.1, 1.2, 8, 0.05, 4000, 8000); return true;
+      case 'glass': return S('glass', { gain: 0.6 });
+      case 'woodbreak': if (!has('woodbreak')) return false; S('woodbreak', { gain: 0.5 }); O(0.25, 'sine', 120, 50, 0.4); return true;
+      case 'crash':
+        if (!has('crash')) return false;
+        S('crash', { gain: 1, dur: 3 }); O(0.8, 'sine', 64, 25, 0.8); this.trickle(out, t + 0.2, 1.5, 14, 0.2, 600, 4000); return true;
+      case 'smash':        // a whole front coming down: two crashes on top of each other, the boom, and a long trickle
+        if (!has('crash')) return false;
+        S('crash', { gain: 1.2, rate: 0.85 }); S('crash', { gain: 0.8, rate: 0.7, delay: 0.25 }); O(1.4, 'sine', 58, 20, 1.4, 0, 0.01);
+        N(1.2, 'lowpass', 300, 40, 1, 0.8, 0, this.brown); this.trickle(out, t + 0.4, 2.4, 26, 0.3, 600, 4500); return true;
+      case 'bang':         // a fist on the wall from outside
+        if (!has('wallhit')) return false;
+        S('wallhit', { gain: 1, rate: 0.75 }); O(0.4, 'sine', 68, 28, 1.1); this.trickle(out, t + 0.06, 0.7, 8, 0.1, 1500, 4500); return true;
+      case 'mstep':        // the recorded stomp, dropped, with the sub you feel
+        if (!has('mstep')) return false;
+        S('mstep', { gain: 1.1, rate: rnd(0.62, 0.72) }); O(0.9, 'sine', 42, 18, 1.2, 0, 0.008); this.trickle(out, t + 0.1, 0.8, 6, 0.08, 1200, 4000); return true;
+      case 'roar':
+        if (!has('roar')) return false;
+        S('roar', { gain: 1.2, rate: rnd(0.68, 0.78) }); O(2.6, 'sine', 40, 24, 0.8, 0, 0.3); return true;
+      case 'spot':         // it has seen you: a short torn shriek
+        if (!has('roar')) return false;
+        S('roar', { gain: 1.25, rate: rnd(1.05, 1.2), dur: 1.4 }); N(0.9, 'bandpass', 600, 2600, 3, 0.25, 0, this.pink); return true;
+      case 'stun':         // the flare hits: it screams
+        if (!has('jumpscream') && !has('roar')) return false;
+        if (!S('jumpscream', { gain: 0.9, rate: 0.62 })) S('roar', { gain: 1.1, rate: 1.3, dur: 2 });
+        S('roar', { gain: 0.6, rate: 0.85, delay: 0.1, dur: 1.8 }); return true;
+      case 'windup': return S('growl', { gain: 0.9, rate: 0.6, dur: 1.6 });
+      case 'lunge': return S('growl', { gain: 1, rate: 0.85, dur: 0.6 });
+      case 'summon':       // it calls, long and low, and the buildings answer with clicking
+        if (!has('roar')) return false;
+        S('roar', { gain: 1.2, rate: 0.55 }); S('roar', { gain: 0.5, rate: 0.5, delay: 0.3 });
+        if (!S('chitter', { gain: 0.6, delay: 1.6 })) for (let i = 0; i < 26; i++) N(0.025, 'highpass', rnd(2500, 5000), 0, 2, 0.35, 1.4 + Math.random() * 2);
+        return true;
+      case 'eat':          // bones going, then it swallows
+        if (!has('eat')) return false;
+        for (let i = 0; i < 6; i++) S('eat', { gain: 1, rate: rnd(0.6, 0.85), delay: i * rnd(0.18, 0.26) });
+        this.throat(t + 1.5, out, { f0: 70, f1: 40, dur: 0.7, vowels: ['u', 'o', 'u'], v: 0.4, breath: 0.5, rough: true, size: 0.6 }); O(0.4, 'sine', 160, 50, 0.5, 2.1); return true;
+      case 'skitter': return S('skitter', { gain: 0.11, rate: rnd(0.9, 1.3), dur: 0.35 });
+      case 'screech':      // keep the synth shriek, put real clicking under it
+        if (!has('chitter')) return false;
+        S('chitter', { gain: 0.25, rate: 1.2, dur: 1 }); this.throat(t, out, { f0: 900, f1: 1400, dur: 0.9, vowels: ['i', 'e', 'i'], v: 0.18, breath: 0.5, rough: true, vib: 18 }); return true;
+      case 'bite': if (!has('eat')) return false; S('eat', { gain: 1, rate: 1.25 }); N(0.03, 'highpass', 3000, 0, 1, 0.6); return true;
+      case 'knock': return S('knock', { gain: 0.9, dur: 2.5 });
+      case 'whisper': return S('whisper', { gain: 0.3, dur: 4 });
+      case 'scream': return S('scream', { gain: 1.5, lp: 3500 });
+      case 'dawn':         // the church bell across the town
+        if (!has('bell')) return false;
+        S('bell', { gain: 0.9, jit: false }); return true;
+    }
+    return false;
+  }
+
   // someone breathing right behind you
   breatheAt(out) {
     const c = this.ctx, t = c.currentTime;
@@ -558,21 +708,40 @@ export class Sound {
   }
 
   // ------------------------------------------------------------------ it talks
-  // The words come from the browser's speech voice, as low and slow as it will go; under them the synth adds
-  // the monster's own throat, breathing through every word, so it sounds like it comes out of something big.
+  // Its lines are recorded (Fish Audio, see voicelines.js): played from its mouth, a little slowed and dropped, with
+  // weight added under 150 Hz, some grit, and its own throat breathing under the words so it sounds like it comes out of
+  // something big. If the recording is not there, the browser's speech voice says the line instead, as low and slow as
+  // it will go, over the same throat. kind/idx: which line of narration.js it is.
   // pos: where it is (sets how loud); far-off lines are quieter. Returns the subtitle text.
-  speak(text, pos) {
+  speak(text, pos, kind, idx) {
     if (!this.ctx) return null;
     let k = 1;
     if (pos) { const r = this.rel(pos.x, pos.y, pos.z); k = clamp(1.15 - r.d / 90, 0.25, 1); }
     if (this.onSubtitle) this.onSubtitle(text);
     if (!this.voiceOn || this.paused) return text;
-    const words = text.split(/\s+/).length, dur = 0.55 + words * 0.42;
-    // the throat bed
     const c = this.ctx, t = c.currentTime + 0.12;
     const out = pos ? this.spot(pos.x, pos.y, pos.z, k * 0.9, false) : (() => { const g = c.createGain(); g.gain.value = k; g.connect(this.sfxG); return g; })();
-    const seq = ['u', 'o', 'a', 'aw', 'uh'];
+    const buf = this.bank && kind ? this.bank.getVoice(kind, idx) : null;
+    if (!buf && this.bank && kind) this.bank.loadVoice(kind, idx);      // next time
+    this.hush();
     let tt = t;
+    if (buf) {
+      const rate = 0.93, s = this.src(buf); s.playbackRate.value = rate;
+      const shelf = c.createBiquadFilter(); shelf.type = 'lowshelf'; shelf.frequency.value = 150; shelf.gain.value = 5;
+      const dry = c.createGain(); dry.gain.value = 1.5;
+      const drive = c.createGain(); drive.gain.value = 2.5; const sh = c.createWaveShaper(); sh.curve = this.curve;
+      const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1100; bp.Q.value = 0.8; const grit = c.createGain(); grit.gain.value = 0.22;
+      s.connect(shelf); shelf.connect(dry); dry.connect(out);
+      shelf.connect(drive); drive.connect(sh); sh.connect(bp); bp.connect(grit); grit.connect(out);
+      s.start(t); this.voiceSrc = s;
+      const len = buf.duration / rate;
+      // the throat breathing under it, quieter than when it has to carry the words alone
+      for (; tt < t + len - 0.2;) { const d = rnd(0.35, 0.55); this.throat(tt, out, { f0: rnd(45, 55), f1: rnd(36, 42), dur: d, vowels: ['u', 'o'], v: 0.07, breath: 0.9, rough: true, sub: 0.5, size: 0.55, att: 0.08 }); tt += d + rnd(0.05, 0.15); }
+      this.N(out, t + len, 1.1, 'bandpass', 480, 240, 2, 0.3, this.pink);     // a long breath out after it
+      return text;
+    }
+    const words = text.split(/\s+/).length;
+    const seq = ['u', 'o', 'a', 'aw', 'uh'];
     for (let i = 0; i < words; i++) {
       const d = rnd(0.3, 0.45);
       this.throat(tt, out, { f0: rnd(48, 60), f1: rnd(38, 46), dur: d, vowels: [pick(seq), pick(seq)], v: 0.22, breath: 0.9, rough: true, sub: 0.4, size: 0.55, att: 0.05 });
@@ -587,10 +756,8 @@ export class Sound {
       const pref = vs.find((v) => /male|daniel|fred|alex|david|george|guy|ryan|google uk english male/i.test(v.name) && !/female/i.test(v.name)) || vs[0];
       if (pref) u.voice = pref;
       u.pitch = 0.05; u.rate = 0.68; u.volume = clamp(k * this.vol.master * this.vol.sfx * 1.1, 0, 1);
-      speechSynthesis.cancel();
       speechSynthesis.speak(u);
     } catch {}
-    void dur;
     return text;
   }
 }

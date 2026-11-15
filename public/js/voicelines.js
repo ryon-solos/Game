@@ -1,0 +1,20 @@
+// The monster's recorded lines, generated with Fish Audio (voice "Monster", model drama-3). Each list matches the order
+// of LINES in narration.js; the ids are Fish generation ids. `npm run audio` downloads them to public/audio/voice/;
+// without that the game tries Fish's own copy, and failing that uses the browser's speech voice.
+export const FISH_URL = (id) => `https://platform.r2.fish.audio/tasks/2026-11-15/${id}.mp3`;
+
+export const VOICE_IDS = {
+  night: ['c164488497b0464787ad4a97f8c5f61e', '75ac1073105f41fa86ab8431b1fbd6c1', '323dba5f0c1c4d819a5c8fc9c8d25095', 'daee4586b2d84704b010506b8a5fd310', 'c1ec94ee73b74dba9669d2b8255a537b', 'f5169606b69943e29a7103ada7116844'],
+  spot: ['17b5b537daee40ebb0a8bd23fc2bcead', '9b1f3d5378e6446187f1b2b4f8bc8c74', 'bc6efc7b96a34c06b9b04848a6458328', '0589347617014e81b4bc62fd4ff67505', '7ea5d8dff97f430aa6b5e0f95f721efc'],
+  reveal: ['06cd184899764f81a82145f38550aaf4', 'cfedf7d3553a4c61aa543b797572e9a2', '3457d9d62c73493b9c834ac841e86676', '3f069fe322bc4b5db8149f57fa2fd40a', 'f618ff5f046048a79c06918e0d0baef6'],
+  search: ['403008ae55444247aed2e5785338ad21', 'f9c60b469e564d5bbb0bedd2eb396d81', '8b1d329ffe3e4bafa608a1c0ce6a6ff9', '4c1f54a200a64767867225c87dc7d2cd', 'd327668520c1420784c654149ca6f6bb', 'c043912ffe0b42a2bc3f12e28047070e', 'c06ffa4189394a8ea240e95382e2cb1c'],
+  star: ['7982c0b710b843459d31772f44c6fb33', 'def95680a0a74ead837e911679a12c61', '8a7afcf96b514d57aeb7a639774bc045', '3374a8e5184649c6aab4b86f4a938613'],
+  wake: ['479ec7bbda48404a87dbc6b5e6209d9d', '4a219c7e7c314c9aa9f1d41c27e7d529', '1cc7f1139b354ce1b3cf46c787895ff2', '2c1325c0732f41de84ff987885aad70f'],
+  grab: ['df57047d8c104b509405c66022889fa7', 'cf9c8f2a9c9d4cdd8841e42afe91e189', 'b839e3a87e5c422ab7fc02ce1cd53888', '27a967464ca84682a2fd28bebf24937e'],
+  ate: ['4359c16abe15482c92c77c7375299f62', '28f66800d587484e8e43cb8ab27a287d', '340db7bfb1d7414fba2aaebe87546659', '8c0974bb5754448da500e7e9225c7796'],
+  hurt: ['5b82861823d34d4587980542d3b96924', 'c142c87b617c4dacb7b5bad82f497e57', 'ec46b9d426c24efabb9a7155496bd373'],
+  summon: ['5713322183df4b28a9512cd467f11ec2', '38ae388dd08944db82ba3f761471cdb0', 'aeacd7eaef4b4bedb324d5b55e33c761'],
+  bottle: ['e16a5cd8f1674d9aa80fc700ac4bb092', 'a34c532faf1d45198c662f587e5ade7b'],
+  idle: ['35a68864414e4f50a0b6034a176bdaa8', '8b413274c20e49b4b0851810ac7bcc03', '9e9536824b4f4168b352fca434394ae0', '7d98f8a8a63c4200be0dfc15e383da53', '22ecc39fdbc54d18b1c653823815e84b', '888cd1cec88e420295e58a3264180104', '48b6d941d59045028718a07981cdba02', 'f868dbd3d67f496b9077070758971c04', '0268be27e82c488595e949ee87c9f204'],
+  dawn: ['2f991d50ad73488894e4a0cd7f7c5cf0', 'ef704da9a4d843c09efdfb99233a6bb8', '200ff477cb2c4d829bc3ec8616673085'],
+};
