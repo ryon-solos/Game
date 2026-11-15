@@ -6,7 +6,7 @@ services:
     name: the-long-street
     runtime: node
     plan: free
-    buildCommand: npm install
+    buildCommand: npm install && npm run audio
     startCommand: npm start
     healthCheckPath: /healthz
     autoDeploy: true

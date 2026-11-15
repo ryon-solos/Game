@@ -1,3 +1,5 @@
 node_modules/
 *.log
 dist/
+# downloaded by `npm run audio`; the "Fetch game audio" workflow commits them with git add -f
+public/audio/

@@ -8,4 +8,5 @@ command -v node >/dev/null || { echo "Node.js 18+ is required: https://nodejs.or
 echo "Updating from GitHub..."
 git pull --ff-only || echo "(could not update: continuing with the code you have)"
 npm install --no-audit --no-fund
+npm run audio || echo "(could not download the recorded sounds: the game will synthesise them)"
 if [ "$1" = "dev" ]; then npm run dev; else npm start; fi

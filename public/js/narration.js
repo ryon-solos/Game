@@ -19,7 +19,7 @@ const URGENT = new Set(['grab', 'ate', 'night']);
 
 export class Narrator {
   constructor(say) {
-    this.say = say;                 // (text, kind) => void
+    this.say = say;                 // (text, kind, index in LINES[kind]) => void; the index picks the recording
     this.last = -1e9; this.recent = []; this.time = 0;
     this.idleT = 30 + Math.random() * 20;
   }
@@ -33,7 +33,7 @@ export class Narrator {
     const text = (fresh.length ? fresh : bank)[(Math.random() * (fresh.length || bank.length)) | 0];
     this.recent.push(text); if (this.recent.length > 10) this.recent.shift();
     this.last = this.time; this.idleT = 28 + Math.random() * 30;
-    this.say(text, kind);
+    this.say(text, kind, bank.indexOf(text));
     return true;
   }
   // every frame. near: the monster is close enough to be talking to you
