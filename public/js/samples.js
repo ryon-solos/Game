@@ -136,13 +136,91 @@ export class Bank {
     }
   }
   gain(buf, g) { for (let k = 0; k < buf.numberOfChannels; k++) { const d = buf.getChannelData(k); for (let i = 0; i < d.length; i++) d[i] *= g; } }
-  // keep up to `sec` seconds and make the end flow into the start (equal-power crossfade of the last `xf` s into the head)
-  loopify(buf, sec) {
-    const sr = buf.sampleRate, xf = Math.min(1.5, buf.duration * 0.15), nx = Math.floor(xf * sr);
-    const len = Math.min(buf.length, Math.floor((sec + xf) * sr));
-    const body = len - nx, out = this.ctx.createBuffer(buf.numberOfChannels, body, sr);
-    for (let k = 0; k < buf.numberOfChannels; k++) {
+  // RMS envelope of the channel mix, one value per `hop` samples
+  envelope(buf, hop, from = 0, to = buf.length) {
+    const ch = buf.numberOfChannels, env = [];
+    for (let i = from; i + hop <= to; i += hop) {
+      let s = 0;
+      for (let k = 0; k < ch; k++) { const d = buf.getChannelData(k); for (let j = i; j < i + hop; j += 2) s += d[j] * d[j]; }
+      env.push(Math.sqrt((s * 2) / (hop * ch)));
+    }
+    return env;
+  }
+  // Keep up to `sec` seconds and make the end flow into the start (equal-power crossfade of the last `xf` s into the head).
+  // Recordings are rarely even: music has a quiet intro or a breakdown, breathing has pauses, wind dies away. Looped
+  // as is, those become stretches of near silence every time round, so the sound seems to cut out. So: take the
+  // stretch of the recording with the fewest quiet holes, then ride its level so quiet passages come up to the rest.
+  // cut out the holes: stretches more than 20 dB under the recording's typical level, joined with short crossfades
+  closeGaps(buf) {
+    const sr = buf.sampleRate, ch = buf.numberOfChannels, hop = Math.floor(sr * 0.1), env = this.envelope(buf, hop);
+    if (env.length < 10) return buf;
+    const med = env.slice().sort((a, b) => a - b)[Math.floor(env.length * 0.6)] || 0;
+    if (med <= 0) return buf;
+    const runs = [];
+    let s = -1;
+    env.forEach((e, i) => { const loud = e > med * 0.1; if (loud && s < 0) s = i; if ((!loud || i === env.length - 1) && s >= 0) { runs.push([s, loud ? i + 1 : i]); s = -1; } });
+    const keep = runs.filter(([a, b]) => b - a >= 3);            // ignore loud blips shorter than 0.3 s
+    if (keep.length < 2 && keep.length && keep[0][0] === 0 && keep[0][1] === env.length) return buf;   // nothing to cut
+    const total = keep.reduce((n, [a, b]) => n + (b - a) * hop, 0);
+    if (total < sr * 3) return buf;                              // mostly quiet: leave it alone
+    const xn = Math.floor(sr * 0.05), out = this.ctx.createBuffer(ch, total, sr);
+    for (let k = 0; k < ch; k++) {
       const src = buf.getChannelData(k), d = out.getChannelData(k);
+      let w = 0;
+      for (const [a, b] of keep) {
+        const from = a * hop, n = (b - a) * hop;
+        for (let i = 0; i < n; i++) {
+          const v = src[from + i];
+          if (w > 0 && i < xn) { const t = i / xn; d[w - xn + i] = d[w - xn + i] * Math.cos(t * Math.PI / 2) + v * Math.sin(t * Math.PI / 2); }
+          else d[w - (w > 0 ? xn : 0) + i] = v;
+        }
+        w += n - (w > 0 ? xn : 0);
+      }
+    }
+    return this.copy(out, 0, out.length - xn * (keep.length - 1));
+  }
+  loopify(buf, sec) {
+    buf = this.closeGaps(buf);
+    const sr = buf.sampleRate, ch = buf.numberOfChannels;
+    const xf = Math.min(1.5, buf.duration * 0.15), nx = Math.floor(xf * sr);
+    const len = Math.min(buf.length, Math.floor((sec + xf) * sr));
+    // 1. where to start: the window whose quietest tenth is loudest
+    const hop = Math.floor(sr * 0.1), env = this.envelope(buf, hop), wn = Math.max(1, Math.floor(len / hop));
+    let start = 0;
+    if (env.length > wn) {
+      let best = -1;
+      for (let s = 0; s + wn <= env.length; s += 5) {
+        const w = env.slice(s, s + wn).sort((a, b) => a - b), q = w[Math.floor(w.length * 0.1)];
+        if (q > best * 1.05) { best = q; start = s * hop; }
+      }
+    }
+    const seg = this.copy(buf, start, len);
+    // 2. ride the level: 0.4 s blocks, each pulled towards the median, at most +15 dB up and -6 dB down, smoothed
+    const bh = Math.floor(sr * 0.4), be = this.envelope(seg, bh);
+    if (be.length > 2) {
+      const med = be.slice().sort((a, b) => a - b)[Math.floor(be.length / 2)] || 1e-6;
+      const g = be.map((e) => Math.min(5.6, Math.max(0.5, med / Math.max(e, 1e-6))));
+      for (let pass = 0; pass < 2; pass++) for (let i = 1; i < g.length - 1; i++) g[i] = (g[i - 1] + 2 * g[i] + g[i + 1]) / 4;
+      for (let k = 0; k < ch; k++) {
+        const d = seg.getChannelData(k);
+        for (let i = 0; i < d.length; i++) {
+          const p = i / bh - 0.5, a = Math.max(0, Math.min(g.length - 1, Math.floor(p))), b = Math.min(g.length - 1, a + 1), f = Math.max(0, Math.min(1, p - a));
+          d[i] *= g[a] + (g[b] - g[a]) * f;
+        }
+      }
+    }
+    // 3. the seam, placed (within 50 ms) where the tail is in phase with the head, so a tonal drone does not
+    //    cancel itself for a moment every time round
+    const maxL = Math.min(Math.floor(sr * 0.05), Math.max(0, seg.length - nx * 2)), m0 = seg.getChannelData(0), cn = Math.min(nx, 4096);
+    let lag = 0, bestC = -Infinity;
+    for (let L = 0; L <= maxL; L += 2) {
+      const at = seg.length - nx - L; let cs = 0;
+      for (let i = 0; i < cn; i += 2) cs += m0[i] * m0[at + i];
+      if (cs > bestC) { bestC = cs; lag = L; }
+    }
+    const body = seg.length - nx - lag, out = this.ctx.createBuffer(ch, body, sr);
+    for (let k = 0; k < ch; k++) {
+      const src = seg.getChannelData(k), d = out.getChannelData(k);
       d.set(src.subarray(0, body));
       for (let i = 0; i < nx; i++) { const t = i / nx; d[i] = src[i] * Math.sin(t * Math.PI / 2) + src[body + i] * Math.cos(t * Math.PI / 2); }
     }

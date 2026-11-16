@@ -81,7 +81,14 @@ assert.strictEqual(beats.length, 6, 'one slice per heartbeat (lub and dub togeth
 assert.ok(beats.every((b) => b.duration <= 0.56 && b.duration > 0.3), 'each beat holds its lub-dub');
 const long = new Buf(2, sr * 60, sr); for (let k = 0; k < 2; k++) long.getChannelData(k).fill(0.3);
 const lp = bank.loopify(long, 40);
-assert.ok(Math.abs(lp.duration - 40) < 0.01, 'loops are cut to length (' + lp.duration + ')');
+assert.ok(Math.abs(lp.duration - 40) < 0.06, 'loops are cut to length (' + lp.duration + ')');
 assert.ok(lp.getChannelData(0).every(Number.isFinite), 'loop is finite');
+// a track with an 8 s near-silent intro and a 5 s drop-out in the middle: looped as it was, it went quiet for
+// seconds at a time. The loop must have no stretch that quiet.
+const uneven = new Buf(2, sr * 70, sr);
+for (let k = 0; k < 2; k++) { const d = uneven.getChannelData(k); for (let i = 0; i < d.length; i++) { const t = i / sr; d[i] = Math.sin(t * 2 * Math.PI * 110 + k) * (t < 8 ? 0.004 : t > 30 && t < 35 ? 0.01 : 0.5); } }
+const ul = bank.loopify(uneven, 40), uenv = bank.envelope(ul, Math.floor(sr * 0.5)), umed = uenv.slice().sort((a, b) => a - b)[uenv.length >> 1];
+assert.ok(Math.abs(ul.duration - 40) < 0.06, 'uneven loop is cut to length');
+assert.ok(Math.min(...uenv) > umed * 0.3, `no near-silent stretch in a loop (quietest half second ${(20 * Math.log10(Math.min(...uenv) / umed)).toFixed(1)} dB under the median)`);
 const m = bank.mono(long); assert.strictEqual(m.numberOfChannels, 1);
 console.log('audio: ok');
