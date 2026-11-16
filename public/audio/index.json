@@ -1,0 +1,503 @@
+{
+ "sfx": {
+  "amb_drone": [
+   {
+    "file": "sfx/amb_drone-1.mp3",
+    "id": 457046,
+    "name": "Horror Pulsating Drone Loop",
+    "user": "gerainsan",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/gerainsan/sounds/457046/"
+   }
+  ],
+  "amb_wind": [
+   {
+    "file": "sfx/amb_wind-1.mp3",
+    "id": 697217,
+    "name": "Looping Gentle Wind Ambience on an Open Desert Plain.wav",
+    "user": "dhallcomposer",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/dhallcomposer/sounds/697217/"
+   }
+  ],
+  "mus_tension": [
+   {
+    "file": "sfx/mus_tension-1.mp3",
+    "id": 387223,
+    "name": "Orchestral Suspense Loop 1",
+    "user": "awrmacd",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/awrmacd/sounds/387223/"
+   }
+  ],
+  "mus_chase": [
+   {
+    "file": "sfx/mus_chase-1.mp3",
+    "id": 422274,
+    "name": "Horror Chase Music loop",
+    "user": "PearceWilsonKing",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/PearceWilsonKing/sounds/422274/"
+   }
+  ],
+  "heart": [
+   {
+    "file": "sfx/heart-1.mp3",
+    "id": 688735,
+    "name": "Heartbeat 97 BPM",
+    "user": "Cloud-10",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/Cloud-10/sounds/688735/"
+   }
+  ],
+  "breath_scared": [
+   {
+    "file": "sfx/breath_scared-1.mp3",
+    "id": 554307,
+    "name": "Scared Male Heavy Breathing",
+    "user": "casiba842",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/casiba842/sounds/554307/"
+   }
+  ],
+  "breath_run": [
+   {
+    "file": "sfx/breath_run-1.mp3",
+    "id": 456037,
+    "name": "heavy breathing while running",
+    "user": "florianreichelt",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/florianreichelt/sounds/456037/"
+   }
+  ],
+  "step_out": [
+   {
+    "file": "sfx/step_out-1.mp3",
+    "id": 535052,
+    "name": "concrete footsteps 1.wav",
+    "user": "patchytherat",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/patchytherat/sounds/535052/"
+   }
+  ],
+  "step_in": [
+   {
+    "file": "sfx/step_in-1.mp3",
+    "id": 502507,
+    "name": "Creaking Wood 4 Steps",
+    "user": "Rudmer_Rotteveel",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/Rudmer_Rotteveel/sounds/502507/"
+   }
+  ],
+  "roar": [
+   {
+    "file": "sfx/roar-1.mp3",
+    "id": 466830,
+    "name": "Dragon: Snarl, Roar + Attack",
+    "user": "Breviceps",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/Breviceps/sounds/466830/"
+   },
+   {
+    "file": "sfx/roar-2.mp3",
+    "id": 837799,
+    "name": "Sea Creature Roar",
+    "user": "Bikkit99",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/Bikkit99/sounds/837799/"
+   }
+  ],
+  "growl": [
+   {
+    "file": "sfx/growl-1.mp3",
+    "id": 797697,
+    "name": "Monster",
+    "user": "randbsoundbites",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/randbsoundbites/sounds/797697/"
+   },
+   {
+    "file": "sfx/growl-2.mp3",
+    "id": 442817,
+    "name": "Goblin Growl",
+    "user": "qubodup",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/qubodup/sounds/442817/"
+   }
+  ],
+  "mstep": [
+   {
+    "file": "sfx/mstep-1.mp3",
+    "id": 721601,
+    "name": "Giant step",
+    "user": "DasWaff",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/DasWaff/sounds/721601/"
+   },
+   {
+    "file": "sfx/mstep-2.mp3",
+    "id": 622737,
+    "name": "GiantStompFootsteps.mp3",
+    "user": "RobHorror240",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/RobHorror240/sounds/622737/"
+   }
+  ],
+  "eat": [
+   {
+    "file": "sfx/eat-1.mp3",
+    "id": 445987,
+    "name": "Horror / Zombie - Biting on bones",
+    "user": "Breviceps",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/Breviceps/sounds/445987/"
+   },
+   {
+    "file": "sfx/eat-2.mp3",
+    "id": 574752,
+    "name": "Bone Breaks (celery snaps)",
+    "user": "ericnorcross81",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/ericnorcross81/sounds/574752/"
+   }
+  ],
+  "jumpscream": [
+   {
+    "file": "sfx/jumpscream-1.mp3",
+    "id": 587354,
+    "name": "Jumpscare Scream",
+    "user": "Breviceps",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/Breviceps/sounds/587354/"
+   }
+  ],
+  "skitter": [
+   {
+    "file": "sfx/skitter-1.mp3",
+    "id": 521869,
+    "name": "Skittering bugs.mp3",
+    "user": "Mendenhall02",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/Mendenhall02/sounds/521869/"
+   },
+   {
+    "file": "sfx/skitter-2.mp3",
+    "id": 202108,
+    "name": "Spider Chattering.wav",
+    "user": "spookymodem",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/spookymodem/sounds/202108/"
+   }
+  ],
+  "chitter": [
+   {
+    "file": "sfx/chitter-1.mp3",
+    "id": 417299,
+    "name": "Insect chittering.wav",
+    "user": "guitar_paul1",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/guitar_paul1/sounds/417299/"
+   }
+  ],
+  "glass": [
+   {
+    "file": "sfx/glass-1.mp3",
+    "id": 613879,
+    "name": "window breaking",
+    "user": "RangoAnimations",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/RangoAnimations/sounds/613879/"
+   },
+   {
+    "file": "sfx/glass-2.mp3",
+    "id": 389804,
+    "name": "Shattering Glass.wav",
+    "user": "krnash",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/krnash/sounds/389804/"
+   }
+  ],
+  "woodbreak": [
+   {
+    "file": "sfx/woodbreak-1.mp3",
+    "id": 443293,
+    "name": "Wood Break.wav",
+    "user": "Deathscyp",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/Deathscyp/sounds/443293/"
+   },
+   {
+    "file": "sfx/woodbreak-2.mp3",
+    "id": 520720,
+    "name": "Wood Break.boaay",
+    "user": "BOAAY",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/BOAAY/sounds/520720/"
+   }
+  ],
+  "crash": [
+   {
+    "file": "sfx/crash-1.mp3",
+    "id": 703247,
+    "name": "Big falling debris (crash)",
+    "user": "xkeril",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/xkeril/sounds/703247/"
+   },
+   {
+    "file": "sfx/crash-2.mp3",
+    "id": 712918,
+    "name": "building collapse / demolition",
+    "user": "greyfeather",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/greyfeather/sounds/712918/"
+   }
+  ],
+  "wallhit": [
+   {
+    "file": "sfx/wallhit-1.mp3",
+    "id": 640198,
+    "name": "wall destruction",
+    "user": "bruno.auzet",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/bruno.auzet/sounds/640198/"
+   }
+  ],
+  "door": [
+   {
+    "file": "sfx/door-1.mp3",
+    "id": 367052,
+    "name": "Wooden door creaking",
+    "user": "TheBuilder15",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/TheBuilder15/sounds/367052/"
+   }
+  ],
+  "doorslam": [
+   {
+    "file": "sfx/doorslam-1.mp3",
+    "id": 402465,
+    "name": "Door Open Close Heavy Wooden Hard Loud Creak Seal Theatre",
+    "user": "LampEight",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/LampEight/sounds/402465/"
+   }
+  ],
+  "closet": [
+   {
+    "file": "sfx/closet-1.mp3",
+    "id": 644430,
+    "name": "Wooden Door Open Close Creak.wav",
+    "user": "wesleywestmusic",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/wesleywestmusic/sounds/644430/"
+   }
+  ],
+  "gun": [
+   {
+    "file": "sfx/gun-1.mp3",
+    "id": 427594,
+    "name": "22 magnum pistol shot",
+    "user": "michorvath",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/michorvath/sounds/427594/"
+   }
+  ],
+  "thunder": [
+   {
+    "file": "sfx/thunder-1.mp3",
+    "id": 486557,
+    "name": "thunder.rumble.ogg",
+    "user": "xUMR",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/xUMR/sounds/486557/"
+   }
+  ],
+  "bell": [
+   {
+    "file": "sfx/bell-1.mp3",
+    "id": 149057,
+    "name": "Church Bells In the Distance",
+    "user": "bensnedden",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/bensnedden/sounds/149057/"
+   }
+  ],
+  "knock": [
+   {
+    "file": "sfx/knock-1.mp3",
+    "id": 256513,
+    "name": "Knock on the door",
+    "user": "HunteR4708",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/HunteR4708/sounds/256513/"
+   }
+  ],
+  "whisper": [
+   {
+    "file": "sfx/whisper-1.mp3",
+    "id": 234044,
+    "name": "Creepy Whispering",
+    "user": "RaspberryTickle",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/RaspberryTickle/sounds/234044/"
+   },
+   {
+    "file": "sfx/whisper-2.mp3",
+    "id": 339827,
+    "name": "eerie whispers.wav",
+    "user": "tony2metal",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/tony2metal/sounds/339827/"
+   }
+  ],
+  "scream": [
+   {
+    "file": "sfx/scream-1.mp3",
+    "id": 609973,
+    "name": "woman scream.wav",
+    "user": "starnezio",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/starnezio/sounds/609973/"
+   }
+  ],
+  "musicbox": [
+   {
+    "file": "sfx/musicbox-1.mp3",
+    "id": 414490,
+    "name": "Creepy Music Box",
+    "user": "Mr_KeybOred",
+    "licence": "cc0",
+    "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0",
+    "page": "https://freesound.org/people/Mr_KeybOred/sounds/414490/"
+   }
+  ]
+ },
+ "voice": {
+  "night": [
+   "voice/night-0.mp3",
+   "voice/night-1.mp3",
+   "voice/night-2.mp3",
+   "voice/night-3.mp3",
+   "voice/night-4.mp3",
+   "voice/night-5.mp3"
+  ],
+  "spot": [
+   "voice/spot-0.mp3",
+   "voice/spot-1.mp3",
+   "voice/spot-2.mp3",
+   "voice/spot-3.mp3",
+   "voice/spot-4.mp3"
+  ],
+  "reveal": [
+   "voice/reveal-0.mp3",
+   "voice/reveal-1.mp3",
+   "voice/reveal-2.mp3",
+   "voice/reveal-3.mp3",
+   "voice/reveal-4.mp3"
+  ],
+  "search": [
+   "voice/search-0.mp3",
+   "voice/search-1.mp3",
+   "voice/search-2.mp3",
+   "voice/search-3.mp3",
+   "voice/search-4.mp3",
+   "voice/search-5.mp3",
+   "voice/search-6.mp3"
+  ],
+  "star": [
+   "voice/star-0.mp3",
+   "voice/star-1.mp3",
+   "voice/star-2.mp3",
+   "voice/star-3.mp3"
+  ],
+  "wake": [
+   "voice/wake-0.mp3",
+   "voice/wake-1.mp3",
+   "voice/wake-2.mp3",
+   "voice/wake-3.mp3"
+  ],
+  "grab": [
+   "voice/grab-0.mp3",
+   "voice/grab-1.mp3",
+   "voice/grab-2.mp3",
+   "voice/grab-3.mp3"
+  ],
+  "ate": [
+   "voice/ate-0.mp3",
+   "voice/ate-1.mp3",
+   "voice/ate-2.mp3",
+   "voice/ate-3.mp3"
+  ],
+  "hurt": [
+   "voice/hurt-0.mp3",
+   "voice/hurt-1.mp3",
+   "voice/hurt-2.mp3"
+  ],
+  "summon": [
+   "voice/summon-0.mp3",
+   "voice/summon-1.mp3",
+   "voice/summon-2.mp3"
+  ],
+  "bottle": [
+   "voice/bottle-0.mp3",
+   "voice/bottle-1.mp3"
+  ],
+  "idle": [
+   "voice/idle-0.mp3",
+   "voice/idle-1.mp3",
+   "voice/idle-2.mp3",
+   "voice/idle-3.mp3",
+   "voice/idle-4.mp3",
+   "voice/idle-5.mp3",
+   "voice/idle-6.mp3",
+   "voice/idle-7.mp3",
+   "voice/idle-8.mp3"
+  ],
+  "dawn": [
+   "voice/dawn-0.mp3",
+   "voice/dawn-1.mp3",
+   "voice/dawn-2.mp3"
+  ]
+ },
+ "credits": []
+}

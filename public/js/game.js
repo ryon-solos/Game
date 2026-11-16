@@ -134,7 +134,7 @@ export class Game {
     this.viewGun = null; this.thrown = []; this.hauntT = 30; this.ghost = null; this.attract = null;
     this.cheats = null;   // the solo test menu (cheats.js), set by main.js
     // the thing talks: lines are spoken from its mouth, and subtitled
-    this.narr = new Narrator((text) => { const mp = this.monster.mouthPos; this.sound.speak(text, this.monster.group.visible ? { x: mp.x, y: mp.y, z: mp.z } : null); });
+    this.narr = new Narrator((text, kind, idx) => { const mp = this.monster.mouthPos; this.sound.speak(text, this.monster.group.visible ? { x: mp.x, y: mp.y, z: mp.z } : null, kind, idx); });
     this.nightLineT = 0; this.prevMst = null; this.searchLineT = 0;
 
     // first-person arms: torch in the left hand, pistol in the right

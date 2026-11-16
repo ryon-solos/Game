@@ -5,6 +5,7 @@ where node >nul 2>nul || (echo Node.js 18+ is required: https://nodejs.org & pau
 echo Updating from GitHub...
 git pull --ff-only || echo (could not update: continuing with the code you have)
 call npm install --no-audit --no-fund || (pause & exit /b 1)
+call npm run audio
 start "" http://localhost:3000
 call npm start
 pause

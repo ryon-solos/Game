@@ -29,6 +29,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      # download the recorded sounds (freesound effects and music, the monster's voice) into public/audio;
+      # never fails the build: anything missing is synthesised in the browser
+      - run: npm run audio
       - run: bash scripts/build-static.sh
         env:
           # optional repository variable (Settings > Secrets and variables > Actions > Variables):
