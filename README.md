@@ -138,7 +138,7 @@ browser with WebAudio, so it always has sound, files or no files.
 - **The monster's voice:** 59 lines ("You will taste delicious.", "I can hear your heart.", "Thief.") recorded with
   [Fish Audio](https://fish.audio) in a deep, raspy voice, played from its mouth, slowed a little, with weight and grit
   added and its own throat breathing under the words. Lines are always subtitled; switch the voice off under
-  Settings > Monster voice. Without the recordings the browser's speech voice says the lines instead.
+  Settings > Monster voice. There is no computer voice: without the recordings the lines are subtitles and a growl.
 - **Music that follows the danger:** the drone is always there; the suspense loop swells in as the monster gets
   close; the chase loop takes over when it drops onto all ten limbs and runs at you.
 - **Your body:** the heartbeat is single recorded beats played at your heart rate (calm 62 bpm, past 160 running
