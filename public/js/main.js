@@ -4,6 +4,7 @@ import { Game } from './game.js';
 import { Net, LocalNet, serverUrl } from './net.js';
 import { Sound } from './audio.js';
 import { Avatar } from './avatar.js';
+import { Cheats } from './cheats.js';
 import { dailySeed } from '../shared/world.js';
 
 const $ = (id) => document.getElementById(id);
@@ -70,8 +71,8 @@ const hud = {
     if (net && net.solo) net.paused = !locked && playing;
     if (game && game.phase === 'over') return;
     $('pauseTitle').textContent = net && net.solo ? 'Paused' : 'Menu';
-    $('pauseNote').textContent = net && net.solo ? '' : 'The night does not stop for you in multiplayer.';
-    if (!$('settings').classList.contains('show')) overlay('pause', !locked);
+    $('pauseNote').textContent = net && net.solo ? (cheats.unlocked ? 'Press ` or F8 for the test menu (cheats).' : '') : 'The night does not stop for you in multiplayer.';
+    if (!$('settings').classList.contains('show') && !cheats.isOpen) overlay('pause', !locked);
   },
   toast(text, kind) {
     const t = document.createElement('div'); t.className = 'toast ' + (kind || ''); t.textContent = text;
@@ -127,6 +128,17 @@ const hud = {
 };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// the solo test menu: god mode, x-ray and the rest (single player only, see cheats.js)
+const cheats = new Cheats({
+  getNet: () => net, getGame: () => game, hud,
+  inGame: () => screen === 'game' && !!game && game.phase !== 'over' && !$('settings').classList.contains('show'),
+  onClosed: (resume) => {
+    if (resume && game) { overlay('pause', false); game.lock(); }
+    // if the browser refused to take the mouse back, show the pause screen rather than nothing
+    setTimeout(() => { if (screen === 'game' && !document.pointerLockElement && game && game.phase !== 'over' && !cheats.isOpen) hud.onLock(false); }, resume ? 300 : 0);
+  },
+});
+
 // ------------------------------------------------------------------ game + network glue
 function ensureGame() {
   if (game && builtQuality === settings.quality) return game;
@@ -134,6 +146,7 @@ function ensureGame() {
   builtQuality = settings.quality;
   game = new Game({ canvas: $('game'), settings, sound, hud });
   game.seedWanted = dailySeed();
+  game.cheats = cheats;
   window.__game = game;
   return game;
 }
@@ -167,6 +180,7 @@ function leaveGame() {
   if (game) game.startAttract();
   if (document.pointerLockElement) document.exitPointerLock();
   lobby = null;
+  cheats.close(false);
   overlay('pause', false); overlay('over', false);
   if (mode === 'multi') { show('multi'); refresh(); } else show('home');
 }

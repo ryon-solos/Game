@@ -10,7 +10,7 @@
     "update": "git pull --ff-only && npm install --no-audit --no-fund",
     "play": "npm run update && npm run audio && npm start",
     "audio": "node scripts/fetch-audio.mjs",
-    "test": "node test/sim.test.js && node test/physics.test.js && node test/minion.test.js && node test/audio.test.js",
+    "test": "node test/sim.test.js && node test/physics.test.js && node test/minion.test.js && node test/audio.test.js && node test/cheats.test.js",
     "build:static": "bash scripts/build-static.sh"
   },
   "engines": {

@@ -12,6 +12,7 @@ export class Player {
     this.stamina = 100; this.tired = false; this.restT = 0;
     this.eye = EYE_STAND; this.bob = 0; this.stepDist = 0; this.camLift = 0;
     this.others = [];
+    this.speedMul = 1; this.fly = false;   // testing cheats (solo only): see cheats.js
   }
   get h() { return this.crouch ? H_CROUCH : H_STAND; }
   hit(x, y, z, h = this.h) { return this.col.test(x - R, y + 0.01, z - R, x + R, y + h, z + R); }
@@ -19,6 +20,7 @@ export class Player {
 
   // returns a list of events: {t:'step',loud}, {t:'land',v}, {t:'jump'}
   update(dt, inp) {
+    if (this.fly) return this.flyUpdate(dt, inp);
     const ev = [];
     // --- stance
     if (inp.crouch && !this.crouch) this.crouch = true;
@@ -37,7 +39,7 @@ export class Player {
       if (this.restT <= 0) this.stamina = Math.min(100, this.stamina + (this.moving ? 9 : 15) * dt);
       if (this.tired && this.stamina > 30) this.tired = false;
     }
-    const sp = this.crouch ? SPEED.crouch : this.sprinting ? SPEED.sprint : SPEED.walk;
+    const sp = (this.crouch ? SPEED.crouch : this.sprinting ? SPEED.sprint : SPEED.walk) * this.speedMul;
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
     const tx = (-sin * f + cos * s) * sp, tz = (-cos * f - sin * s) * sp;
     const acc = this.ground ? 14 : 3;
@@ -102,5 +104,19 @@ export class Player {
     this.eye += ((this.crouch ? EYE_CROUCH : EYE_STAND) - this.eye) * Math.min(1, dt * 10);
     this.camLift *= Math.max(0, 1 - dt * 12);
     return ev;
+  }
+
+  // Cheat: fly through walls. Space rises, crouch sinks, sprint goes faster. No gravity, no footsteps, no noise.
+  flyUpdate(dt, inp) {
+    let f = (inp.fwd ? 1 : 0) - (inp.back ? 1 : 0), s = (inp.right ? 1 : 0) - (inp.left ? 1 : 0);
+    const len = Math.hypot(f, s);
+    if (len) { f /= len; s /= len; }
+    const sp = 9 * this.speedMul * (inp.sprint ? 2.5 : 1);
+    const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
+    this.x += (-sin * f + cos * s) * sp * dt; this.z += (-cos * f - sin * s) * sp * dt;
+    this.y = Math.max(-0.5, this.y + ((inp.jump ? 1 : 0) - (inp.crouch ? 1 : 0)) * sp * dt);
+    this.vx = this.vy = this.vz = 0; this.ground = true; this.crouch = false; this.sprinting = false; this.moving = len > 0;
+    this.eye += (EYE_STAND - this.eye) * Math.min(1, dt * 10); this.camLift = 0;
+    return [];
   }
 }
