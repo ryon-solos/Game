@@ -51,9 +51,11 @@ export class Cheats {
   // getNet / getGame: the live transport and game. inGame(): the game screen is up. hud: toasts. onClosed(): the menu was shut.
   constructor({ getNet, getGame, inGame, hud, onClosed }) {
     this.getNet = getNet; this.getGame = getGame; this.inGame = inGame; this.hud = hud; this.onClosed = onClosed;
-    const q = new URLSearchParams(location.search);
-    if (q.has('cheats')) store.set('tls.cheatsUnlocked', q.get('cheats') !== '0');
-    this.unlocked = LOCAL_HOST.test(location.hostname) || location.protocol === 'file:' || store.get('tls.cheatsUnlocked', false);
+    // ?cheats unlocks this page and is remembered for next time; ?cheats=0 locks it again. The address
+    // itself counts even when the browser will not store anything (private windows, blocked site data).
+    const q = new URLSearchParams(location.search), asked = q.has('cheats') ? q.get('cheats') !== '0' : null;
+    if (asked !== null) store.set('tls.cheatsUnlocked', asked);
+    this.unlocked = LOCAL_HOST.test(location.hostname) || location.protocol === 'file:' || (asked ?? store.get('tls.cheatsUnlocked', false));
     this.state = Object.assign({ speed: 1 }, store.get('tls.cheats', {}));
     for (const t of TOGGLES) this.state[t.k] = !!this.state[t.k];
     this.isOpen = false; this.pool = []; this.badge = '';
@@ -123,7 +125,7 @@ export class Cheats {
   open() {
     const n = this.getNet();
     if (!n || !n.solo) return this.hud.toast('The test menu is single player only.', 'bad');
-    if (!this.unlocked) return this.hud.toast('Cheats are locked on this site. Add ?cheats to the address to unlock them.', 'bad');
+    if (!this.unlocked) return this.hud.toast(`Cheats are locked on this site. Open ${location.origin}/?cheats to unlock them.`, 'bad');
     this.isOpen = true; this.sync();
     this.el.classList.add('show');
     document.getElementById('pause').classList.remove('show');
