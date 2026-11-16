@@ -40,11 +40,15 @@ export class Sound {
     const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
     if (!ctx && !AC) return;
     const c = this.ctx = ctx || new AC({ latencyHint: 'interactive' });
-    // master -> gentle limiter -> out. A pause duck sits in front of everything but the menus.
+    // master -> headroom -> rumble filter -> peak limiter -> out. A pause duck sits in front of everything but the menus.
+    // The limiter only catches peaks and lets go at once. A bus compressor here (low threshold, slow release) turned
+    // the whole mix down for a moment on every stomp and roar, which sounded like everything cutting out.
     this.master = c.createGain();
+    const head = c.createGain(); head.gain.value = 0.72;
+    const rumble = c.createBiquadFilter(); rumble.type = 'highpass'; rumble.frequency.value = 24; rumble.Q.value = 0.6;
     const lim = c.createDynamicsCompressor();
-    lim.threshold.value = -9; lim.knee.value = 6; lim.ratio.value = 10; lim.attack.value = 0.004; lim.release.value = 0.3;
-    this.master.connect(lim); lim.connect(c.destination);
+    lim.threshold.value = -2; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.002; lim.release.value = 0.08;
+    this.master.connect(head); head.connect(rumble); rumble.connect(lim); lim.connect(c.destination); this.limiter = lim;
     this.duck = c.createGain(); this.duck.connect(this.master);
     this.uiG = c.createGain(); this.uiG.connect(this.master);
     this.sfxG = c.createGain(); this.sfxG.connect(this.duck);
@@ -250,7 +254,9 @@ export class Sound {
   update(dt, tension, monsterDist, charging) {
     if (!this.ctx) return;
     const c = this.ctx, now = c.currentTime, L = this.listener;
-    this.tension += (tension - this.tension) * Math.min(1, dt * 1.2);
+    // rises quickly, falls away over a few seconds: the music should not jump in and out as the monster turns or a
+    // hand comes and goes
+    this.tension += (tension - this.tension) * Math.min(1, dt * (tension > this.tension ? 1.2 : 0.22));
     const T = this.tension;
     const SK = this.synthK, LG = this.loopG;
     this.tenG.gain.setTargetAtTime((0.04 + T * T * 0.45) * SK.ten, now, 0.4);
@@ -258,8 +264,9 @@ export class Sound {
     this.highG.gain.setTargetAtTime(T > 0.55 ? (T - 0.55) * 0.5 : 0, now, 0.3);
     this.droneG.gain.setTargetAtTime((0.35 + T * 0.35) * SK.drone, now, 0.8);
     // the recorded music: the drone is always there, the suspense loop swells in as it gets close
-    if (LG.amb_drone) LG.amb_drone.gain.setTargetAtTime(0.42 * (1 - this.chaseK * 0.5), now, 1.2);
-    if (LG.mus_tension) LG.mus_tension.gain.setTargetAtTime(T < 0.2 ? 0 : Math.pow((T - 0.2) / 0.8, 1.4) * 0.55 * (1 - this.chaseK * 0.7), now, 0.9);
+    // (never all the way out: a quiet bed of suspense is always there, so the street is never suddenly silent)
+    if (LG.amb_drone) LG.amb_drone.gain.setTargetAtTime(0.42 * (1 - this.chaseK * 0.3), now, 1.2);
+    if (LG.mus_tension) LG.mus_tension.gain.setTargetAtTime((0.1 + Math.pow(T, 1.4) * 0.45) * (1 - this.chaseK * 0.6), now, 1.5);
     // indoors the wind is a muffled moan behind the glass
     this.windF.frequency.setTargetAtTime(L.indoors ? 170 : 420, now, 0.6);
     if (this.windSF) this.windSF.frequency.setTargetAtTime(L.indoors ? 520 : 9000, now, 0.6);
@@ -283,9 +290,9 @@ export class Sound {
       this.growlWet.gain.setTargetAtTime(0.25 + (1 - near) * 0.5, now, 0.3);
       void r;
     } else this.growlG.gain.setTargetAtTime(0, now, 0.3);
-    this.chaseK += ((charging ? 1 : 0) - this.chaseK) * Math.min(1, dt * 1.5);
+    this.chaseK += ((charging ? 1 : 0) - this.chaseK) * Math.min(1, dt * (charging ? 1.5 : 0.35));
     this.chaseG.gain.setTargetAtTime(this.chaseK * 0.06 * (0.4 + near) * SK.chase, now, 0.15);
-    if (LG.mus_chase) LG.mus_chase.gain.setTargetAtTime(this.chaseK * 0.6, now, this.chaseK > 0.5 ? 0.25 : 1.5);
+    if (LG.mus_chase) LG.mus_chase.gain.setTargetAtTime(this.chaseK * 0.6, now, charging ? 0.25 : 1.2);
     this.chaseO.forEach((o, i) => o.frequency.setTargetAtTime((i ? 98 : 92.5) * (1 + this.chaseK * 0.5), now, 0.6));
     this.updateBody(dt);
     if (this.paused) return;
