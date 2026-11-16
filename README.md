@@ -100,7 +100,31 @@ address in).
 | Health | Lost to falls, debris and crawler bites. Restored by bandages and by being indoors at dawn. |
 
 Controls: `WASD` move, `Shift` sprint, `C`/`Ctrl` crouch, `Space` jump, `Q`/`R` lean round a corner,
-`E` doors / closets / stars / pick up, `F` torch, `G` throw a bottle, left click fire, `Esc` menu.
+`E` doors / closets / stars / pick up, `F` torch, `G` throw a bottle, left click fire, `Esc` menu,
+`` ` `` or `F8` test menu (solo only).
+
+### Test menu (cheats, single player only)
+
+For testing the game without dying. In a solo game press `` ` `` (the key left of `1`) or `F8` to open it;
+the game pauses while it is open.
+
+| Group | Cheats |
+|---|---|
+| Survival | God mode (nothing hurts or kills you), infinite health (hits refill, but a grab still kills, for testing grabs), no fall damage |
+| Stealth | Invisible (the monster, its hands and the crawlers cannot see, hear or smell you; presence never fills), silent (nothing you do makes noise it can hear; thrown bottles still do) |
+| Movement | Infinite stamina, fly / no-clip (Space up, C down, Shift faster), move speed 0.5x to 4x |
+| Items | Infinite flare ammo, infinite bottles, instant star pickup |
+| Vision | X-ray for stars (closet stars are marked), items and the monster (with what it is doing, its hands and crawlers), with distances; full bright |
+| World | Freeze the monster, stop the clock |
+| Do it now | Complete the star quota, +1 star, teleport to the nearest star, heal, stun the monster, send it to the far end, kill or summon crawlers, skip to the next night, jump to any night 1-10 |
+
+Active cheats are listed in the top right corner and stay on between games until you turn them off.
+
+It only works in solo games: it acts on the in-browser solo simulation, the server never reads cheat state
+and there is no network message for it, so it cannot affect a multiplayer game. It is always available on
+`localhost` and your local network. On a hosted copy (Render, GitHub Pages, Netlify) it is locked so
+ordinary players do not stumble on it: add `?cheats` to the address once to unlock it in that browser
+(`?cheats=0` locks it again).
 
 Things that are only in your head (and only on your screen): whispers and knocks, a figure in a
 doorway that is gone when you look straight at it, tailor's dummies that have turned to face you
@@ -167,8 +191,9 @@ public/config.js     address of the multiplayer server for static hosting
 shared/world.js      deterministic street generator (runs on server and client)
 shared/room.js       authoritative game simulation and monster AI
 public/js/game.js    rendering, input, local player
+public/js/cheats.js  the solo test menu (god mode, x-ray, ...)
 public/js/*.js       world meshes and breakage, rubble physics, monster, crawlers, avatars, audio, the monster's lines, post-processing, menus
-test/                headless tests (simulation, physics, crawler renderer)
+test/                headless tests (simulation, physics, crawler renderer, cheats)
 ```
 
 All textures and sounds are generated in code; there are no asset downloads.

@@ -132,6 +132,7 @@ export class Game {
     this.sendT = 0; this.hudT = 0; this.pickT = new Map(); this.prompt = null; this.spec = 0; this.time = 0;
     this.ray = new THREE.Raycaster();
     this.viewGun = null; this.thrown = []; this.hauntT = 30; this.ghost = null; this.attract = null;
+    this.cheats = null;   // the solo test menu (cheats.js), set by main.js
     // the thing talks: lines are spoken from its mouth, and subtitled
     this.narr = new Narrator((text) => { const mp = this.monster.mouthPos; this.sound.speak(text, this.monster.group.visible ? { x: mp.x, y: mp.y, z: mp.z } : null); });
     this.nightLineT = 0; this.prevMst = null; this.searchLineT = 0;
@@ -173,6 +174,7 @@ export class Game {
       if (e.button === 0) this.alive ? this.shoot() : this.spec++;
     });
   }
+  cheat(k) { return !!(this.cheats && this.cheats.on(k)); }
   lock() { try { const p = this.canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch {} }
 
   resize() {
@@ -481,6 +483,7 @@ export class Game {
     const playing = this.world && (this.phase === 'night' || this.phase === 'dawn');
     if (this.world) {
       const P = this.player;
+      if (this.cheats) this.cheats.pre(this);
       if (this.attract) this.runAttract(dt);
       else if (playing && this.alive) {
         // look
@@ -500,7 +503,7 @@ export class Game {
             snd.play('land', clamp(e.v / 14, 0.2, 1));
             if (e.v > 6) this.noise(Math.min(25, e.v * 1.4));
             // (the simulation answers with an 'hp' message, which plays the hurt sound and flash: do not do it twice)
-            if (e.v > 11.5) { const a = Math.round((e.v - 11.5) * 7); this.shake = 1; this.hud.toast(`Fall damage  −${a}`, 'bad'); this.net.send({ t: 'hurt', a }); }
+            if (e.v > 11.5 && !this.cheat('noFall') && !this.cheat('god')) { const a = Math.round((e.v - 11.5) * 7); this.shake = 1; this.hud.toast(`Fall damage  −${a}`, 'bad'); this.net.send({ t: 'hurt', a }); }
           }
         }
         // lean round corners (Q / R): the camera moves sideways, as far as the wall lets it
@@ -526,7 +529,7 @@ export class Game {
           const p = this.world.pickups.get(this.taking.id);
           if (!p || Math.hypot(p.k.x - P.x, p.k.z - P.z) > 2.3 || Math.abs(p.k.y - P.y - 0.8) > 1.8) { if (p) p.take = 0; this.taking = null; }
           else {
-            this.taking.t += dt / 1.1; p.take = Math.min(1, this.taking.t);
+            this.taking.t += dt / (this.cheat('instantStar') ? 0.02 : 1.1); p.take = Math.min(1, this.taking.t);
             if (this.taking.t >= 1 && !this.taking.sent) { this.taking.sent = true; this.net.send({ t: 'pick', id: p.k.id }); }
             if (this.taking && this.taking.t > 1.6) { p.take = 0; this.taking = null; }   // (a solo pick is confirmed synchronously)
           }
@@ -648,8 +651,10 @@ export class Game {
       if ((this.moonN = (this.moonN + 1) % this.q.moonEvery) === 0) this.moon.shadow.needsUpdate = true;
     }
     this.blackout = Math.max(0, (this.blackout || 0) - dt * 0.5);
-    this.renderer.toneMappingExposure = this.attract ? 2.7 : 1.2;   // the menu shows the street off; the game keeps it dark
-    this.post.render(dt, { hurt: this.hurtFx, fear: this.fear, warp: this.warp, gamma: set.gamma * (this.attract ? 1.55 : 1) * (1 - this.blackout * 0.85), dead: this.alive || !playing || this.eaten ? 0 : 0.6 });
+    const bright = !this.attract && this.cheat('bright');
+    this.renderer.toneMappingExposure = this.attract ? 2.7 : bright ? 4 : 1.2;   // the menu shows the street off; the game keeps it dark
+    this.post.render(dt, { hurt: this.hurtFx, fear: this.fear, warp: this.warp, gamma: set.gamma * (this.attract ? 1.55 : bright ? 1.7 : 1) * (1 - this.blackout * 0.85), dead: this.alive || !playing || this.eaten ? 0 : 0.6 });
+    if (this.cheats) this.cheats.draw(this);
 
     this.hudT -= dt;
     if (this.hudT <= 0 && this.world && !this.attract) { this.hudT = 0.1; this.updateHud(); }

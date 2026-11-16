@@ -69,6 +69,44 @@ export class Room {
     // play out identically. Tests pass an explicit jitter to get a reproducible run.
     this.R = rng32((o.seed ^ 0x51ed27) + (o.jitter ?? ((Math.random() * 1e9) | 0)));
     this.W = null;
+    this.cheats = null;
+  }
+
+  // ------------------------------------------------------------------ testing cheats (solo only)
+  // Set only by the solo client on its own in-browser room (public/js/cheats.js). The server never sets
+  // `cheats` and no network message can, and a room only honours them when it is a solo room.
+  cheat(k) { return !!(this.solo && this.cheats && this.cheats[k]); }
+  // invisible: the monster, its hands and the crawlers act as if this player were not there
+  ghost(p) { return !!p && this.cheat('invisible'); }
+  cheatAction(k, arg) {
+    if (!this.solo || !this.W || !this.m) return 'Start a game first';
+    const p = this.players.values().next().value, m = this.m;
+    const live = this.phase === 'night' || this.phase === 'dawn';
+    switch (k) {
+      case 'stars': if (this.phase !== 'night') return 'Only during the night'; this.stars = this.cfg.quota; return null;
+      case 'star': if (this.phase !== 'night') return 'Only during the night'; this.stars++; return null;
+      case 'endNight': if (!live) return 'Only during the night'; this.endNight(); return null;
+      case 'night': {
+        const n = clamp(arg | 0, 1, MAX_NIGHT);
+        if (this.phase === 'over' || this.phase === 'lobby') return 'The game is over';
+        this.retractAll(); this.startNight(n); return null;
+      }
+      case 'heal': if (p && p.alive) p.hp = 100; return null;
+      case 'stun': if (!live || !p) return 'Only during the night'; m.immune = 0; if (m.st === 'stun') return 'Already stunned'; this.stunMonster(p); return null;
+      case 'away': {
+        if (!live || !p) return 'Only during the night';
+        this.retractAll(); m.stims = []; m.huntId = null;
+        m.x = p.x < this.W.L / 2 ? this.W.L - 8 : 8; m.tx = m.x; this.listen(4); return null;
+      }
+      case 'killCrawlers':
+        for (const q of this.minions) this.fx('mdie', q.x, q.y + 0.5, q.z);
+        this.minions = []; return null;
+      case 'summon':
+        if (this.phase !== 'night') return 'Only during the night';
+        if (!this.cfg.minions) return 'Crawlers only come from night 3';
+        this.summonCd = 0; this.summon('time'); return null;
+    }
+    return 'Unknown cheat';
   }
 
   info() {
@@ -144,7 +182,7 @@ export class Room {
         if (k.k === 'star') {
           this.stars++;
           // taking a star rings out: the monster learns where it was taken
-          if (this.m) { this.m.stims.push(this.stimAt(p.x, p.y, p.z, 1.0, 0.75, p)); this.fx('starcry', p.x, p.y + 1, p.z); }
+          if (this.m && !this.ghost(p) && !this.cheat('silent')) { this.m.stims.push(this.stimAt(p.x, p.y, p.z, 1.0, 0.75, p)); this.fx('starcry', p.x, p.y + 1, p.z); }
           if (!this.halfSummon && this.stars >= Math.ceil(this.cfg.quota / 2)) { this.halfSummon = true; this.summon('stars'); }
         }
         else if (k.k === 'bottle') { if (p.bottles >= 3) { this.pickups.set(k.id, k); break; } p.bottles++; }
@@ -264,13 +302,14 @@ export class Room {
   }
 
   hurt(p, a, cause) {
-    if (!p.alive || a <= 0) return;
+    if (!p.alive || a <= 0 || this.cheat('god')) return;
     p.hp -= a;
+    if (this.cheat('infHp')) p.hp = 100;   // still told it was hit, so the hurt flash and sound play
     if (p.hp <= 0) this.kill(p, cause);
     else this.send(p.id, { t: 'hp', hp: Math.round(p.hp), cause });
   }
   kill(p, cause, hand) {
-    if (!p.alive) return;
+    if (!p.alive || this.cheat('god')) return;
     p.alive = false; p.hp = 0;
     this.bc({ t: 'dead', id: p.id, cause, h: hand });
     if (hand != null) this.wipeT = 9;         // let everyone watch it eat first (cut short once it has swallowed)
@@ -312,12 +351,14 @@ export class Room {
     }
     this.time += dt;
     this.updatePlayers(dt);
-    this.monsterTick(dt);
-    this.handsTick(dt);
-    this.minionsTick(dt);
+    if (!this.cheat('freeze')) {
+      this.monsterTick(dt);
+      this.handsTick(dt);
+      this.minionsTick(dt);
+    }
     if (this.wipeT > 0) { this.wipeT -= dt; if (this.wipeT <= 0) { this.checkWipe(); if (this.phase === 'over') return; } }
     if (this.phase === 'night') {
-      this.tleft -= dt;
+      if (!this.cheat('freezeTime')) this.tleft -= dt;
       if (this.tleft <= 0) {            // out of time: it starts to simply know
         this.frenzyT -= dt;
         if (this.frenzyT <= 0) {
@@ -361,6 +402,9 @@ export class Room {
         if (z.key !== p.prevZone) p.expo = 0;
         p.prevZone = p.zone; p.zone = z.key;
       }
+      if (this.cheat('ammo')) p.ammo = 6;
+      if (this.cheat('bottles')) p.bottles = 3;
+      if (this.ghost(p)) { p.expo = 0; continue; }
       if (this.phase !== 'night' || this.time < 10) continue;
       if (z.kind === 'flat') this.heat.set(z.key, (this.heat.get(z.key) || 0) + dt);
       p.expo += dt / EXPOSE_TIME;
@@ -376,7 +420,7 @@ export class Room {
 
   noise(x, y, z, r, p) {
     const m = this.m, cfg = this.cfg;
-    if (!m || (this.phase !== 'night' && this.phase !== 'dawn')) return;
+    if (!m || (this.phase !== 'night' && this.phase !== 'dawn') || this.ghost(p) || (p && this.cheat('silent'))) return;
     const d = Math.hypot(x - m.x, z - m.z, (y - m.h * 0.8) * 0.5), eff = r * cfg.hearing;
     if (d > eff) return;
     const s = (0.35 + 0.65 * (1 - d / eff)) * Math.min(1.6, r / 14);
@@ -407,7 +451,7 @@ export class Room {
   }
   sees(p) {
     const m = this.m, cfg = this.cfg;
-    if (!p.alive || p.hid || !this.outdoors(p)) return false;
+    if (!p.alive || p.hid || this.ghost(p) || !this.outdoors(p)) return false;
     let range = cfg.view;
     if (p.fl & 4) range *= 1.6;                 // flashlight on
     if ((p.fl & 1) && !(p.fl & 8)) range *= 0.45; // crouched and still
@@ -418,6 +462,7 @@ export class Room {
 
   reveal(p) {
     const m = this.m;
+    if (this.ghost(p)) return;
     this.send(p.id, { t: 'alert', k: 'reveal' });
     this.fx('roar', m.x, m.h, m.z);
     const g = this.stimAt(p.x, p.y, p.z, 2, 1, p);
@@ -520,7 +565,7 @@ export class Room {
 
   pickRoam() {
     const m = this.m, cfg = this.cfg, W = this.W, R = this.R;
-    const alive = [...this.players.values()].filter((p) => p.alive);
+    const alive = [...this.players.values()].filter((p) => p.alive && !this.ghost(p));
     const r = R();
     let tx;
     if (r < 0.5) {                                                              // its round: the whole street, end to end
@@ -562,10 +607,10 @@ export class Room {
     }
     if (m.st === 'hunt') {
       const p = this.players.get(m.huntId);
-      const still = p && p.alive && (this.sees(p) || this.time < m.huntForce);
+      const still = p && p.alive && !this.ghost(p) && (this.sees(p) || this.time < m.huntForce);
       if (!still) {
         if (seen) m.huntId = seen.id;
-        else if (p && p.alive) { m.st = 'investigate'; m.t = 0; m.goal = this.stimAt(p.x, p.y, p.z, 1.5, 0.85, p); m.feinted = false; }
+        else if (p && p.alive && !this.ghost(p)) { m.st = 'investigate'; m.t = 0; m.goal = this.stimAt(p.x, p.y, p.z, 1.5, 0.85, p); m.feinted = false; }
         else this.listen(1.5);
       }
       if (m.st === 'hunt') this.huntHands(this.players.get(m.huntId));
@@ -579,7 +624,7 @@ export class Room {
     }
     // a lit torch near a window gives you away
     for (const p of this.players.values()) {
-      if (p.alive && (p.fl & 4) && p.zi && p.zi.kind === 'flat' && Math.abs(p.z) - K.FRONT < 3.2 && Math.abs(p.x - m.x) < 14 && R() < 0.2)
+      if (p.alive && !this.ghost(p) && (p.fl & 4) && p.zi && p.zi.kind === 'flat' && Math.abs(p.z) - K.FRONT < 3.2 && Math.abs(p.x - m.x) < 14 && R() < 0.2)
         m.stims.push(this.stimAt(p.x, p.y, p.z, 0.7, 0.7, p));
     }
     // sound
@@ -688,7 +733,7 @@ export class Room {
 
   huntHands(p) {
     const m = this.m, cfg = this.cfg;
-    if (!p || !p.alive) return;
+    if (!p || !p.alive || this.ghost(p)) return;
     const armMax = m.h * 0.9 + 5;
     if (Math.hypot(p.x - m.x, p.z - m.z) > armMax + 2) return;
     const want = 1 + Math.floor(cfg.n / 4);
@@ -773,7 +818,7 @@ export class Room {
     const t = h.task, flat = t.flat, R = this.R;
     t.track = null; t.wpT = this.time + 1.8;
     for (const p of this.players.values()) {
-      if (!p.alive || !this.inFlat(p, flat)) continue;
+      if (!p.alive || this.ghost(p) || !this.inFlat(p, flat)) continue;
       if (p.hid && t.aware < 0.85) continue;          // shut in a closet: a blind hand passes over it
       const hidden = (p.fl & 1) && !(p.fl & 8);       // crouched and still
       if (R() < t.aware * (hidden ? 0.4 : 1)) { t.track = p.id; break; }
@@ -851,6 +896,7 @@ export class Room {
 
   // a hand has closed on someone: carry them out and up to the face
   grab(h, p) {
+    if (this.cheat('god')) return;
     const m = this.m, t = h.task, inside = t.type === 'search' && !t.flat.street && !(t.flat.roof && !t.flat.stair);
     const side = t.flat && !t.flat.street ? t.flat.side : (p.z >= m.z ? 1 : -1);
     this.kill(p, 'hand', h.i);
@@ -885,7 +931,7 @@ export class Room {
           else {
             if (t.track) {
               const p = this.players.get(t.track);
-              if (p && p.alive && this.inFlat(p, flat)) { t.wp = { x: p.x, y: p.y + 0.8, z: p.z }; this.limit(h, flat, t.wp); } else t.track = null;
+              if (p && p.alive && !this.ghost(p) && this.inFlat(p, flat)) { t.wp = { x: p.x, y: p.y + 0.8, z: p.z }; this.limit(h, flat, t.wp); } else t.track = null;
             }
             if (!t.wp || (this.time > t.wpT && !t.blk) || (!t.track && at(t.wp))) this.pickWp(h);
             goal = t.wp || t.in;
@@ -894,7 +940,7 @@ export class Room {
         else if (t.ph === 4) { goal = t.out; sp *= 1.4; list = null; if (at(goal, 0.6)) h.task = { type: 'retract', path: [], blk: null }; }
       } else if (t.type === 'chase') {
         const p = this.players.get(t.pid);
-        if (!p || !p.alive || this.time > t.end) h.task = { type: 'retract', path: [], blk: null };
+        if (!p || !p.alive || this.ghost(p) || this.time > t.end) h.task = { type: 'retract', path: [], blk: null };
         else if (!this.outdoors(p)) {
           // followed them to the door: go in after them if it can
           h.task = null;
@@ -939,7 +985,7 @@ export class Room {
 
       if (!lethal || h.task !== k) continue;
       for (const p of this.players.values()) {
-        if (!p.alive || p.hid) continue;
+        if (!p.alive || p.hid || this.ghost(p)) continue;
         if (flat ? !this.inFlat(p, flat) : !this.outdoors(p)) continue;
         if (Math.hypot(p.x - h.x, p.z - h.z) < 0.9 && Math.abs(p.y + 0.8 - h.y) < 1.3) { this.grab(h, p); break; }
       }
@@ -1009,7 +1055,7 @@ export class Room {
       // someone in the same room (or the same stairwell)?
       let prey = null, pd = 7.5, nose = null;
       for (const p of this.players.values()) {
-        if (!p.alive || !p.zi || p.zi.key !== zi.key || zi.kind === 'street') continue;
+        if (!p.alive || this.ghost(p) || !p.zi || p.zi.key !== zi.key || zi.kind === 'street') continue;
         const d = Math.hypot(p.x - q.x, p.z - q.z);
         if (Math.abs(p.y - q.y) > 1.6 || d > pd) continue;
         if (zi.kind === 'flat' && this.roomIndex(zi.flat, p.x, p.z) !== myRoom && d > 1.5) continue;
@@ -1043,7 +1089,7 @@ export class Room {
         if (q.st === 'chase' || q.st === 'nose') { q.st = 'roam'; q.node = this.nearestNode(b, q.x, q.y, q.z); q.path = [q.node]; }
         if (!q.path.length) {
           // pick somewhere to go: mostly towards anyone it can smell in this building
-          const here = [...this.players.values()].filter((p) => p.alive && p.zi && p.zi.b === b && p.zi.kind !== 'street');
+          const here = [...this.players.values()].filter((p) => p.alive && !this.ghost(p) && p.zi && p.zi.b === b && p.zi.kind !== 'street');
           let to;
           if (here.length && R() < 0.75) { const p = here[(R() * here.length) | 0]; to = this.nodeNear(b, p); }
           else do { to = (R() * b.nav.n.length) | 0; } while (b.nav.n[to].street);
