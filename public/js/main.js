@@ -17,7 +17,7 @@ const settings = Object.assign({ sens: 1, fov: 78, master: 0.8, music: 0.7, sfx:
 const profile = Object.assign({ name: '', char: 'm' }, store.get('tls.profile', {}));
 const sound = new Sound();
 const applySound = () => { sound.vol = { master: settings.master, music: settings.music, sfx: settings.sfx }; sound.voiceOn = settings.voice; sound.applyVol(); };
-// what the monster says is always subtitled (and still shown if the browser has no speech voice)
+// what the monster says is always subtitled (and still shown if its recording is missing)
 let subT;
 sound.onSubtitle = (text) => {
   if (screen !== 'game') return;

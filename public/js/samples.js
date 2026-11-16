@@ -37,9 +37,11 @@ export class Bank {
   any(k) { const l = this.sfx.get(k); return l ? l[(Math.random() * l.length) | 0] : null; }
 
   async load() {
-    let idx = null;
+    let idx = null, ready;
+    this.indexReady = new Promise((r) => { ready = r; });       // voice lines asked for early wait for this
     try { const r = await fetch(this.base + 'index.json', { cache: 'no-cache' }); if (r.ok) idx = await r.json(); } catch {}
     if (idx && idx.voice) for (const [kind, files] of Object.entries(idx.voice)) (files || []).forEach((f, i) => { if (f) this.voiceFile[`${kind}-${i}`] = f; });
+    ready();
     // loops first (they are what you hear all the time), then everything else, a few at a time
     const jobs = idx && idx.sfx ? Object.entries(idx.sfx) : [];
     jobs.sort((a, b) => (PREP[b[0]] && PREP[b[0]].loop ? 1 : 0) - (PREP[a[0]] && PREP[a[0]].loop ? 1 : 0));
@@ -73,8 +75,10 @@ export class Bank {
     if (this.voice.has(k)) return Promise.resolve(this.voice.get(k));
     if (this.pending.has(k)) return this.pending.get(k);
     const ids = VOICE_IDS[kind];
-    const local = this.voiceFile[k], remote = ids && ids[i] ? FISH_URL(ids[i]) : null;
     const p = (async () => {
+      // the list of downloaded files may not be read yet (it talked straight away): wait for it, then look
+      if (this.indexReady) await this.indexReady;
+      const local = this.voiceFile[k], remote = ids && ids[i] ? FISH_URL(ids[i]) : null;
       for (const [url, opt] of [[local && this.base + local], [this.remoteFails < 3 && remote, { mode: 'cors', credentials: 'omit' }]]) {
         if (!url) continue;
         try { const b = this.trim(await this.decode(url, opt), 0.01, 12); this.voice.set(k, b); return b; } catch { if (url === remote) this.remoteFails++; }
@@ -82,6 +86,7 @@ export class Bank {
       return null;
     })();
     this.pending.set(k, p);
+    p.then((b) => { if (!b) this.pending.delete(k); });    // a miss is not remembered: asked again next time it is wanted
     return p;
   }
   async prefetchVoice() {

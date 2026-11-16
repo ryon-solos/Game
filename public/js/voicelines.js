@@ -1,6 +1,6 @@
 // The monster's recorded lines, generated with Fish Audio (voice "Monster", model drama-3). Each list matches the order
 // of LINES in narration.js; the ids are Fish generation ids. `npm run audio` downloads them to public/audio/voice/;
-// without that the game tries Fish's own copy, and failing that uses the browser's speech voice.
+// without that the game tries Fish's own copy, and failing that shows the line as a subtitle with a growl.
 export const FISH_URL = (id) => `https://platform.r2.fish.audio/tasks/2026-11-15/${id}.mp3`;
 
 export const VOICE_IDS = {

@@ -84,8 +84,6 @@ export class Sound {
     this.bank = new Bank(c);
     this.bank.onReady = (k) => this.onSample(k);
     if (!ctx && typeof fetch !== 'undefined') this.bank.load().catch(() => {});
-    // the browser loads its speech voices lazily: ask now so they are there when the thing first talks
-    try { if (typeof speechSynthesis !== 'undefined') { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices(); } } catch {}
   }
 
   // impulse response: dark noise tail (highs die first) plus discrete early reflections
@@ -342,9 +340,10 @@ export class Sound {
   heartbeat(v, period) {
     const c = this.ctx, t = c.currentTime + 0.02, out = c.createGain();
     const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 160 + v * 120;
-    out.gain.value = 0.55 * v; lp.connect(out); out.connect(this.bodyG);
+    // (level set against the music bed, which is always there now; the old master compressor used to lift it ~5 dB)
+    out.gain.value = 0.55 * v * 1.9; lp.connect(out); out.connect(this.bodyG);
     // a recorded beat: brighter as it gets louder, a touch quicker at speed
-    if (this.has('heart')) { lp.frequency.value = 900 + v * 1800; this.S('heart', lp, t, { gain: 1.5, rate: 1 + clamp((0.8 - period) * 0.25, 0, 0.12), jit: false }); return; }
+    if (this.has('heart')) { lp.frequency.value = 900 + v * 1800; this.S('heart', lp, t, { gain: 1.6, rate: 1 + clamp((0.8 - period) * 0.25, 0, 0.12), jit: false }); return; }
     const thump = (at, f, a) => {
       const o = c.createOscillator(), g = c.createGain();
       o.frequency.setValueAtTime(f, at); o.frequency.exponentialRampToValueAtTime(f * 0.55, at + 0.14);
@@ -717,8 +716,8 @@ export class Sound {
   // ------------------------------------------------------------------ it talks
   // Its lines are recorded (Fish Audio, see voicelines.js): played from its mouth, a little slowed and dropped, with
   // weight added under 150 Hz, some grit, and its own throat breathing under the words so it sounds like it comes out of
-  // something big. If the recording is not there, the browser's speech voice says the line instead, as low and slow as
-  // it will go, over the same throat. kind/idx: which line of narration.js it is.
+  // something big. There is no computer voice: if the recording is not loaded yet it waits for it, and if there is none
+  // the line is its subtitle and a growl. kind/idx: which line of narration.js it is.
   // pos: where it is (sets how loud); far-off lines are quieter. Returns the subtitle text.
   speak(text, pos, kind, idx) {
     if (!this.ctx) return null;
@@ -726,45 +725,46 @@ export class Sound {
     if (pos) { const r = this.rel(pos.x, pos.y, pos.z); k = clamp(1.15 - r.d / 90, 0.25, 1); }
     if (this.onSubtitle) this.onSubtitle(text);
     if (!this.voiceOn || this.paused) return text;
-    const c = this.ctx, t = c.currentTime + 0.12;
-    const out = pos ? this.spot(pos.x, pos.y, pos.z, k * 0.9, false) : (() => { const g = c.createGain(); g.gain.value = k; g.connect(this.sfxG); return g; })();
-    const buf = this.bank && kind ? this.bank.getVoice(kind, idx) : null;
-    if (!buf && this.bank && kind) this.bank.loadVoice(kind, idx);      // next time
+    const c = this.ctx;
+    // (the voice is quiet against the stomps and roars: lifted here to sit on top of them)
+    const out = pos ? this.spot(pos.x, pos.y, pos.z, k * 1.6, false) : (() => { const g = c.createGain(); g.gain.value = k * 1.6; g.connect(this.sfxG); return g; })();
     this.hush();
+    const id = this.voiceN = (this.voiceN || 0) + 1;
+    const buf = this.bank && kind ? this.bank.getVoice(kind, idx) : null;
+    if (buf) { this.playVoice(buf, out, c.currentTime + 0.12); return text; }
+    // Not loaded yet: wait for the recording (a few seconds at most) rather than fall back to a computer voice.
+    // If there is no recording at all, the line is the subtitle and its throat only.
+    const wait = this.bank && kind ? Promise.race([this.bank.loadVoice(kind, idx), new Promise((r) => setTimeout(() => r(null), 4000))]) : Promise.resolve(null);
+    wait.then((b) => {
+      if (id !== this.voiceN || this.paused) return;          // it has started another line since, or the game paused
+      if (b) this.playVoice(b, out, c.currentTime + 0.05);
+      else this.throatLine(text, out, c.currentTime + 0.05);
+    }, () => { if (id === this.voiceN) this.throatLine(text, out, c.currentTime + 0.05); });
+    return text;
+  }
+  playVoice(buf, out, t) {
+    const c = this.ctx, rate = 0.93, s = this.src(buf); s.playbackRate.value = rate;
+    const shelf = c.createBiquadFilter(); shelf.type = 'lowshelf'; shelf.frequency.value = 150; shelf.gain.value = 5;
+    const dry = c.createGain(); dry.gain.value = 1.5;
+    const drive = c.createGain(); drive.gain.value = 2.5; const sh = c.createWaveShaper(); sh.curve = this.curve;
+    const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1100; bp.Q.value = 0.8; const grit = c.createGain(); grit.gain.value = 0.22;
+    s.connect(shelf); shelf.connect(dry); dry.connect(out);
+    shelf.connect(drive); drive.connect(sh); sh.connect(bp); bp.connect(grit); grit.connect(out);
+    s.start(t); this.voiceSrc = s;
+    const len = buf.duration / rate;
+    // the throat breathing under it, quieter than when it has to carry the words alone
+    for (let tt = t; tt < t + len - 0.2;) { const d = rnd(0.35, 0.55); this.throat(tt, out, { f0: rnd(45, 55), f1: rnd(36, 42), dur: d, vowels: ['u', 'o'], v: 0.04, breath: 0.9, rough: true, sub: 0.5, size: 0.55, att: 0.08 }); tt += d + rnd(0.05, 0.15); }
+    this.N(out, t + len, 1.1, 'bandpass', 480, 240, 2, 0.2, this.pink);     // a long breath out after it
+  }
+  // no recording: a growl shaped like the line, under the subtitle
+  throatLine(text, out, t) {
+    const words = text.split(/\s+/).length, seq = ['u', 'o', 'a', 'aw', 'uh'];
     let tt = t;
-    if (buf) {
-      const rate = 0.93, s = this.src(buf); s.playbackRate.value = rate;
-      const shelf = c.createBiquadFilter(); shelf.type = 'lowshelf'; shelf.frequency.value = 150; shelf.gain.value = 5;
-      const dry = c.createGain(); dry.gain.value = 1.5;
-      const drive = c.createGain(); drive.gain.value = 2.5; const sh = c.createWaveShaper(); sh.curve = this.curve;
-      const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1100; bp.Q.value = 0.8; const grit = c.createGain(); grit.gain.value = 0.22;
-      s.connect(shelf); shelf.connect(dry); dry.connect(out);
-      shelf.connect(drive); drive.connect(sh); sh.connect(bp); bp.connect(grit); grit.connect(out);
-      s.start(t); this.voiceSrc = s;
-      const len = buf.duration / rate;
-      // the throat breathing under it, quieter than when it has to carry the words alone
-      for (; tt < t + len - 0.2;) { const d = rnd(0.35, 0.55); this.throat(tt, out, { f0: rnd(45, 55), f1: rnd(36, 42), dur: d, vowels: ['u', 'o'], v: 0.07, breath: 0.9, rough: true, sub: 0.5, size: 0.55, att: 0.08 }); tt += d + rnd(0.05, 0.15); }
-      this.N(out, t + len, 1.1, 'bandpass', 480, 240, 2, 0.3, this.pink);     // a long breath out after it
-      return text;
-    }
-    const words = text.split(/\s+/).length;
-    const seq = ['u', 'o', 'a', 'aw', 'uh'];
     for (let i = 0; i < words; i++) {
       const d = rnd(0.3, 0.45);
-      this.throat(tt, out, { f0: rnd(48, 60), f1: rnd(38, 46), dur: d, vowels: [pick(seq), pick(seq)], v: 0.22, breath: 0.9, rough: true, sub: 0.4, size: 0.55, att: 0.05 });
+      this.throat(tt, out, { f0: rnd(48, 60), f1: rnd(38, 46), dur: d, vowels: [pick(seq), pick(seq)], v: 0.16, breath: 0.9, rough: true, sub: 0.4, size: 0.55, att: 0.05 });
       tt += d + rnd(0.02, 0.08);
     }
-    this.N(out, tt, 0.9, 'bandpass', 500, 260, 2, 0.35, this.pink);     // a long breath out after it
-    // the words
-    try {
-      if (typeof speechSynthesis === 'undefined' || typeof SpeechSynthesisUtterance === 'undefined') return text;
-      const u = new SpeechSynthesisUtterance(text);
-      const vs = speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang));
-      const pref = vs.find((v) => /male|daniel|fred|alex|david|george|guy|ryan|google uk english male/i.test(v.name) && !/female/i.test(v.name)) || vs[0];
-      if (pref) u.voice = pref;
-      u.pitch = 0.05; u.rate = 0.68; u.volume = clamp(k * this.vol.master * this.vol.sfx * 1.1, 0, 1);
-      speechSynthesis.speak(u);
-    } catch {}
-    return text;
+    this.N(out, tt, 0.9, 'bandpass', 500, 260, 2, 0.25, this.pink);
   }
 }
